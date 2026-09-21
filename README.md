@@ -16,6 +16,8 @@ service, database, or listening TCP port.
 > **v0.1.0 is a public preview.** Broad kernel validation and sustained production
 > overhead measurements remain on the [roadmap](ROADMAP.md).
 
+![Blackbox terminal demo showing a synthetic critical block I/O report](docs/terminal-demo.svg)
+
 ## Quick start
 
 Recording requires a Linux kernel with BTF and permission to load BPF programs.
