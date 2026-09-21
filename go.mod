@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/cilium/ebpf v0.22.0
-	github.com/go-viper/mapstructure/v2 v2.4.0
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/klauspost/compress v1.20.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
