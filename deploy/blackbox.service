@@ -1,0 +1,17 @@
+[Unit]
+Description=Blackbox kernel flight recorder
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+RuntimeDirectory=blackbox
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/bin/blackbox daemon --config /etc/blackbox/config.yml
+Restart=on-failure
+RestartSec=5
+LimitMEMLOCK=infinity
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

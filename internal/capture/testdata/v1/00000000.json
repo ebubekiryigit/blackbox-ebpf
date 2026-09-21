@@ -1,0 +1,1 @@
+{"start_mono_ns":10,"end_mono_ns":20,"events":[{"mono_ns":15,"type":"tcp_reset","cpu":0,"source_ip":"127.0.0.1","destination_ip":"127.0.0.1","source_port":12345,"destination_port":443}],"metrics":[]}

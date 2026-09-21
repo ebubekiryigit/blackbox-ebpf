@@ -1,0 +1,10 @@
+# Developer tools only: make generate / make integration. Never used at runtime.
+# GO_VERSION is synchronized from go.mod by make docs.
+ARG GO_VERSION=1.27.1
+FROM golang:${GO_VERSION}-bookworm
+WORKDIR /build
+ARG LLVM_VERSION=14
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang-${LLVM_VERSION} llvm-${LLVM_VERSION} libbpf-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV BPF2GO_CC=clang-${LLVM_VERSION} BPF2GO_STRIP=llvm-strip-${LLVM_VERSION} CGO_ENABLED=0
