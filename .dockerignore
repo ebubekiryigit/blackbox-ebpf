@@ -1,0 +1,25 @@
+# Version-control metadata and local editor state are not build inputs.
+.git/
+.github/
+.idea/
+.vscode/
+.DS_Store
+
+# Use source builds; keep generated internal/sensor/*_bpfel.o in the context.
+bin/
+coverage/
+*.test
+*.prof
+
+# Never package incident evidence or local operator configuration.
+*.bbx
+*.sock
+captures/
+.local/
+config.yml
+compose.override.yaml
+docker-compose.override.yml
+
+# Keep local environment files out of the image; none are required.
+.env
+.env.*

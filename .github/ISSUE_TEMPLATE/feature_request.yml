@@ -1,0 +1,15 @@
+name: Feature request
+description: Discuss an operator use case or design
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Operator problem
+      description: What incident evidence or workflow is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and tradeoffs
+      description: Include resource, coverage or compatibility implications if known.

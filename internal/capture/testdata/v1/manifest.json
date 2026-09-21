@@ -1,0 +1,1 @@
+{"capture_format_version":1,"application_version":"0.1.0-legacy-fixture","start_mono_ns":10,"requested_start_mono_ns":10,"end_mono_ns":20,"mode":"synthetic-demo","health":{"sensors":[{"name":"tcp","state":"healthy"}]},"future_optional_fixture_field":"ignored"}

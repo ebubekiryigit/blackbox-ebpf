@@ -1,0 +1,27 @@
+# Local IDE/editor settings and operating-system files.
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Built binaries, test coverage and profiling artifacts.
+/bin/
+/coverage/
+*.test
+*.prof
+
+# Captures can contain sensitive host, process and network metadata.
+# Embedded eBPF objects (*.o) are intentionally tracked.
+*.bbx
+*.sock
+/captures/
+
+# Local configuration, investigation evidence and unedited design drafts.
+/config.yml
+/compose.override.yaml
+/docker-compose.override.yml
+/.local/
+
+# Keep local environment files private; none are required by Blackbox.
+.env
+.env.*
