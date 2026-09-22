@@ -16,7 +16,7 @@ service, database, or listening TCP port.
 > **v0.1.0 is a public preview.** Broad kernel validation and sustained production
 > overhead measurements remain on the [roadmap](ROADMAP.md).
 
-![Blackbox terminal demo showing a synthetic critical block I/O report](docs/terminal-demo.svg)
+![Blackbox daemon, status, snapshot, and analysis workflow](docs/terminal-demo.gif)
 
 ## Quick start
 
