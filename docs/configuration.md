@@ -37,7 +37,7 @@ blackbox config show --config config.yml
 blackbox config show --config config.yml --history 3m --strict=false
 ```
 
-The v0.1 configuration format has no top-level version key. YAML validation rejects
+The configuration format has no top-level version key. YAML validation rejects
 unknown and duplicate keys, multiple documents, malformed
 types, anchors, aliases, merge keys, and null values. A malformed value cannot be
 rescued by a CLI override.

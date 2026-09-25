@@ -1,18 +1,18 @@
 # Compatibility and upgrades
 
-Blackbox follows semantic versioning for application releases. v0.1 is a public
-preview: patch releases preserve the v0.1 operator contracts, while a future minor
+Blackbox follows semantic versioning for application releases. v0.2 is a public
+preview: patch releases preserve the v0.2 operator contracts, while a future minor
 preview release may make an incompatible change when the benefit justifies it.
 Every incompatible change must be explicit in the changelog and include an upgrade
 path or a clear rejection error.
 
 ## Independent version contracts
 
-| Contract | v0.1 value | Policy |
+| Contract | v0.2 value | Policy |
 | --- | --- | --- |
-| Application release | `0.1.x` | SemVer; latest patch is the supported preview |
-| YAML configuration | Initial unversioned schema | Patch releases preserve accepted v0.1 settings and meanings |
-| `.bbx` capture | Format `1` | v0.1 readers read and write format 1; incompatible formats are rejected |
+| Application release | `0.2.x` | SemVer; latest patch is the supported preview |
+| YAML configuration | Unversioned, with additive `auto_capture` settings | Patch releases preserve accepted v0.2 settings and meanings |
+| `.bbx` capture | Format `1` | v0.2 readers read and write format 1; incompatible formats are rejected |
 | Control socket | Protocol `1` | Client and daemon reject mismatched protocols; run matching releases |
 
 The YAML schema intentionally has no `version` key. It is validated strictly, so
@@ -41,19 +41,35 @@ There is no in-place capture migration command. If a future writer needs a new
 format, migration must write a new destination and preserve the original. A reader
 that does not support the format returns an actionable error instead of guessing.
 
-## Unreleased automatic capture feature
+## Upgrade from v0.1.0
 
-Source builds enable automatic incident publication by default. Existing configs
-inherit the new defaults. Short retained histories can produce partial automatic
-windows; the capture reports the missing coverage. Review the writable output
-directory and rotation policy before deploying a source build.
-The v0.1.0 binary does not accept the new `auto_capture` YAML keys or CLI flags.
-Preserve the previous config when rolling back.
+There is no incompatible YAML, capture-format or socket-protocol change. The
+default behavior does change: recording can now publish files without a manual
+snapshot request.
+
+v0.1 YAML files remain accepted, but automatic incident publication is enabled by
+default when `auto_capture` is omitted. Before upgrading, review the writable
+`/var/lib/blackbox/captures/auto` directory and rotation policy, or set
+`auto_capture.enabled: false` to keep manual-only recording. Defaults allow up to
+1000 published files or 1 GiB; staging one replacement can briefly require up to
+another 512 MiB and maintains a 64 MiB filesystem free-space reserve. Manual
+captures are not rotated. Automatic encoding uses CPU, memory, and disk I/O when
+triggered, and a concurrent manual snapshot can return busy. Short retained
+histories can produce partial automatic windows; the capture reports missing
+coverage. Pending incidents do not survive daemon restart.
+
+The v0.1.0 binary rejects the new `auto_capture` YAML keys and CLI flags, so
+remove them before rolling back. Preserve the previous config and existing
+captures. Its analyzer ignores automatic trigger metadata and may miss the
+critical reason if the source aggregates were evicted. Analyze v0.2 automatic
+captures with a v0.2 or newer reader.
 
 Automatic trigger metadata and status fields are additive. Existing format-1
-captures retain their interpretation. Older readers ignore the optional trigger
-metadata, while current readers show it without adding it to retained metric counts.
-Application, capture and socket version values have not changed in development.
+captures retain their interpretation. Older readers parse the file but ignore
+the optional trigger metadata; current readers show it without adding it to
+retained metric counts.
+The capture format and socket protocol remain `1`; only the application version
+changes to `0.2.0`.
 
 ## Upgrade an installation
 

@@ -48,12 +48,18 @@ Operational defaults and bounds belong in `internal/config/defaults.go`; operato
 receive validated configuration. Viper stays local to the config loader. Preserve
 strict YAML v3 validation and defaults → file → explicit flags → validation.
 Wire/schema invariants belong in model, not operator configuration.
-The v0.1 YAML format has no top-level version key. Do not add one without an actual
+The YAML format has no top-level version key. Do not add one without an actual
 incompatible schema and migration design.
 
 Keep Make, Docker/Compose, systemd, README, CLI help and config examples consistent.
 After changing flags, defaults or Go version, run `make docs` and `make docs-check`.
 After changing Go dependencies, run `make licenses` and review the generated bundle.
 Sensor C changes also regenerate `bpf/abi.h` and embedded Go/ELF files together.
-Preserve independent capture fixtures and the documented v0.1 compatibility
-policy. Release archives must carry project and runtime dependency licenses.
+Preserve independent capture fixtures and the documented compatibility policy.
+Before a release, compare the previous tag's defaults, config, CLI, capture reader,
+socket protocol, persistence, resource use and rollback behavior with the new build.
+Document operational changes even when wire formats are unchanged, especially new
+background writes or retention. Follow the release checklist in
+`docs/development.md`; keep the changelog, README, compatibility, security and
+upgrade guidance consistent with the GitHub release description. Release
+archives must carry project and runtime dependency licenses.

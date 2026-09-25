@@ -13,7 +13,7 @@ starts investigating: I/O latency, scheduler delay, TCP retransmits and resets,
 OOM victims, and gaps in the collection itself. It runs locally with no external
 service, database, or listening TCP port.
 
-> **v0.1.0 is a public preview.** Broad kernel validation and sustained production
+> **v0.2.0 is a public preview.** Broad kernel validation and sustained production
 > overhead measurements remain on the [roadmap](ROADMAP.md).
 
 ![Blackbox daemon, status, snapshot, and analysis workflow](docs/terminal-demo.gif)
@@ -35,6 +35,7 @@ docker compose exec blackbox /app/blackbox analyze /var/lib/blackbox/captures/in
 
 This starts the daemon with five minutes of bounded rolling history, shows sensor
 health, writes `captures/incident.bbx` on the host, and prints a terminal report.
+Critical incidents are also saved automatically under `captures/auto/`.
 Capture destinations are private and never overwritten, so choose a new `-o` path
 for the next incident.
 
@@ -45,9 +46,8 @@ before deploying it to a server.
 
 ## Automatic incident captures
 
-Source builds now save incidents automatically when selected sensors report critical
-I/O or scheduler latency, or an OOM victim. This feature is unreleased; the v0.1.0
-release binary provides the manual workflow above.
+The daemon saves incidents automatically when selected sensors report critical
+I/O or scheduler latency, or an OOM victim.
 
 The default window covers one minute before detection and ten seconds afterward.
 Triggers within it share one file. A later trigger opens the next incident immediately.
@@ -56,6 +56,8 @@ manual snapshots are not rotated.
 Blackbox writes and verifies a replacement before rotating older files. A failed
 write keeps existing captures, but staging briefly needs extra disk space and
 fails without deleting them if the free-space reserve cannot be maintained.
+Existing v0.1 configurations inherit this new default on upgrade; see the
+[v0.2.0 upgrade notes](docs/compatibility.md#upgrade-from-v010) before deploying.
 
 With Compose, files appear in `captures/auto/`. `status` shows the last saved path
 and failures. Analyze a saved file with the same `analyze` command. Set
@@ -109,7 +111,7 @@ provides static Linux binaries for `amd64` and `arm64`. Each archive includes th
 example config, systemd unit, project licenses, and runtime dependency notices.
 
 ```sh
-version=v0.1.0
+version=v0.2.0
 arch=amd64 # use arm64 on ARM hosts
 archive="blackbox-${version}-linux-${arch}.tar.gz"
 
@@ -161,9 +163,9 @@ path to stdout. Diagnostics use stderr, which keeps shell pipelines predictable.
 ## Configuration
 
 The operator surface covers log level, retained history and memory, enabled
-sensors, failure policy, polling/control timing, and block I/O and scheduler
-latency thresholds, and automatic capture timing/storage. The commented [config.example.yml](config.example.yml) lists
-every accepted value.
+sensors, failure policy, polling/control timing, block I/O and scheduler latency
+thresholds, and automatic capture timing/storage. The commented
+[config.example.yml](config.example.yml) lists every accepted value.
 
 Configuration precedence is compiled defaults, explicit YAML, explicit CLI flags,
 then validation. No file is discovered implicitly. Unknown or duplicate keys,
@@ -187,6 +189,7 @@ blackbox config show --config config.yml --history 2m --strict
 | [CLI reference](docs/cli.md) | Generated commands, flags, and defaults |
 | [Architecture](docs/architecture.md) | Data flow, ownership boundaries, sensors, and persistence |
 | [Compatibility](docs/compatibility.md) | Release, config, capture, socket, and upgrade policy |
+| [Changelog](CHANGELOG.md) | Release changes and operator-visible differences |
 | [Contributing](CONTRIBUTING.md) | Development workflow, tests, and change requirements |
 | [Security](SECURITY.md) | Private vulnerability reporting and capture data boundaries |
 | [Roadmap](ROADMAP.md) | Validation required before a stable release |

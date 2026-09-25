@@ -85,8 +85,8 @@ at least one enabled sensor is recording.
 
 ## Automatic incident captures
 
-Automatic capture is enabled by default in the development tree. It is not in the
-v0.1.0 binary release. The daemon uses selected sensors' aggregate counters:
+Automatic capture is enabled by default in v0.2.0. The daemon uses selected sensors'
+aggregate counters:
 `block_io` and `scheduler` trigger on critical latency, and `oom` on victim count.
 TCP is not a supported trigger. Disabled or unavailable recording sensors do not
 participate; no active trigger source is shown as `inactive` in status.

@@ -83,17 +83,34 @@ Private investigations and decision drafts belong under ignored `.local/`.
 ## Releases
 
 Application releases use the single version in `internal/version/VERSION`. Move
-completed entries from `Unreleased` into a dated `CHANGELOG.md` section, run the
-full validation, then build artifacts:
+completed entries from `Unreleased` into a dated `CHANGELOG.md` section. Prepare
+the GitHub release description from that section when publishing. Run the full
+validation, then build artifacts:
+
+1. Compare the previous release tag with the candidate for defaults, accepted
+   YAML/CLI settings, emitted files, privileges, CPU/memory/disk use, capture
+   interpretation, socket behavior and rollback. Identify both incompatible
+   changes and compatible changes that alter operations. Record the impact and
+   migration steps in `CHANGELOG.md` and [compatibility](compatibility.md); align
+   README, SECURITY and deployment docs. Carry these notes into the GitHub release
+   description when publishing.
+2. Test old capture fixtures with the new reader. If new optional metadata can
+   change a report's meaning, check how the previous reader presents a new
+   capture and document any downgrade risk. Validate an existing config and the
+   new example, plus a manual-only opt-out when a new default writes data.
+3. Run the checks below and privileged kernel integration for recording changes.
+   Inspect the archive contents, embedded binary versions, checksums and licenses
+   for both architectures. Publish only after the release commit and tag are tested.
 
 ```sh
 make docs
 make check
+make integration
 make dist
 ```
 
 `make dist` creates static Linux `amd64` and `arm64` tarballs plus SHA-256
 checksums. Every archive includes the example config, systemd unit, project
 licenses, and the reviewed runtime dependency notices. GitHub release automation
-is intentionally not encoded yet; publish artifacts only from the tested release
-commit and tag.
+is intentionally not encoded yet; publish artifacts and a release description
+drawn from the changelog only from the tested release commit and tag.

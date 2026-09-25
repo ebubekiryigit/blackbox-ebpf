@@ -1,6 +1,6 @@
 # Roadmap
 
-Blackbox v0.1 is a public preview. Priorities focus on dependable local evidence,
+Blackbox v0.2 is a public preview. Priorities focus on dependable local evidence,
 bounded overhead and reproducible validation. Items are not release-date promises.
 
 ## Before a stable release

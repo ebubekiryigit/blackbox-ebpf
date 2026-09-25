@@ -2,10 +2,23 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-09-25
+
 - Automatic incident capture with selected critical latency/OOM aggregate triggers,
   fixed pre/post windows, consecutive incident grouping, and bounded private file rotation.
 - Shared manual/automatic snapshot concurrency, visible publication failures, and
   offline trigger provenance without changing capture or protocol versions.
+- Automatic capture is enabled by default. Existing v0.1 configs remain valid but
+  now publish files under `/var/lib/blackbox/captures/auto`; set
+  `auto_capture.enabled: false` to keep manual-only recording. Published files can
+  use 1 GiB by default, with up to one additional file staged temporarily.
+- Captures omit transient automatic writer state. Reports retain a critical verdict
+  when verified trigger metadata outlives its source aggregates, while keeping
+  captured-window observation counts separate.
+- The v0.1 reader can parse format-1 automatic captures but ignores their trigger
+  metadata; use the v0.2 analyzer when retained source aggregates are missing.
+- Automatic encoding uses CPU, memory and disk I/O when triggered. A concurrent
+  manual snapshot can return busy; pending incidents do not survive a restart.
 
 ## 0.1.0 - 2026-09-22
 
