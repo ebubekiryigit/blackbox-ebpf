@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-No changes yet.
+- Automatic incident capture with selected critical latency/OOM aggregate triggers,
+  fixed pre/post windows, consecutive incident grouping, and bounded private file rotation.
+- Shared manual/automatic snapshot concurrency, visible publication failures, and
+  offline trigger provenance without changing capture or protocol versions.
 
 ## 0.1.0 - 2026-09-22
 

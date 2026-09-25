@@ -41,6 +41,20 @@ There is no in-place capture migration command. If a future writer needs a new
 format, migration must write a new destination and preserve the original. A reader
 that does not support the format returns an actionable error instead of guessing.
 
+## Unreleased automatic capture feature
+
+Source builds enable automatic incident publication by default. Existing configs
+inherit the new defaults. Short retained histories can produce partial automatic
+windows; the capture reports the missing coverage. Review the writable output
+directory and rotation policy before deploying a source build.
+The v0.1.0 binary does not accept the new `auto_capture` YAML keys or CLI flags.
+Preserve the previous config when rolling back.
+
+Automatic trigger metadata and status fields are additive. Existing format-1
+captures retain their interpretation. Older readers ignore the optional trigger
+metadata, while current readers show it without adding it to retained metric counts.
+Application, capture and socket version values have not changed in development.
+
 ## Upgrade an installation
 
 1. Save any history you need. In-memory history is lost when recording stops.

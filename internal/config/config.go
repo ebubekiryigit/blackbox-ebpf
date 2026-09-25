@@ -28,6 +28,7 @@ type Config struct {
 	Control            Control
 	Capture            CaptureLimits
 	Report             Report
+	AutoCapture        AutoCapture
 }
 
 func (c Config) Validate() error {
@@ -96,6 +97,9 @@ func (c Config) Validate() error {
 	if err := c.Capture.Validate(); err != nil {
 		return err
 	}
+	if err := c.AutoCapture.Validate(); err != nil {
+		return err
+	}
 	if c.Control.MaxCaptureBytes < c.Capture.MaxDecodedBytes {
 		return fmt.Errorf("control.max_capture_bytes must be at least capture.max_decoded_bytes")
 	}
@@ -103,6 +107,29 @@ func (c Config) Validate() error {
 		if n < 1 || n > MaxReportEvents {
 			return fmt.Errorf("report.%s must be between 1 and %d", name, MaxReportEvents)
 		}
+	}
+	return nil
+}
+
+func (a AutoCapture) Validate() error {
+	if !path.IsAbs(a.Directory) || strings.ContainsRune(a.Directory, 0) || len(a.Directory) > MaxMetadataPathBytes {
+		return fmt.Errorf("auto_capture.directory must be an absolute path of at most %d bytes", MaxMetadataPathBytes)
+	}
+	if a.Before < MinHistory || a.Before > MaxHistory || a.After < 0 || a.After > MaxHistory {
+		return fmt.Errorf("auto_capture.before must be 1s–24h and after must be 0s–24h")
+	}
+	if a.MaxFiles < 1 || a.MaxFiles > MaxAutoFiles || a.MaxStorage < MinMemory || a.MaxStorage > MaxAutoStorage {
+		return fmt.Errorf("auto_capture requires max_files between 1 and %d and max_storage between 1MiB and 1TiB", MaxAutoFiles)
+	}
+	if len(a.Sensors) == 0 {
+		return fmt.Errorf("auto_capture.sensors must include at least one of block_io, scheduler, oom")
+	}
+	seen := map[string]bool{}
+	for _, s := range a.Sensors {
+		if (s != "block_io" && s != "scheduler" && s != "oom") || seen[s] {
+			return fmt.Errorf("invalid or duplicate auto_capture sensor %q (supported: block_io, scheduler, oom)", s)
+		}
+		seen[s] = true
 	}
 	return nil
 }

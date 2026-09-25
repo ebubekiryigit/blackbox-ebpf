@@ -169,9 +169,15 @@ func (r *Recorder) Snapshot(last time.Duration, now uint64, host model.Host, hea
 	if uint64(last) < now {
 		start = now - uint64(last)
 	}
+	return r.SnapshotWindow(start, now, host, health, mode)
+}
+
+// SnapshotWindow selects a fixed past window without rewinding retention time.
+// Callers advance the recorder with the current clock before selection.
+func (r *Recorder) SnapshotWindow(start, now uint64, host model.Host, health model.Health, mode string) model.Capture {
 	actual := start
 	if from := r.Health().RetainedFromNS; actual < from {
-		actual = from
+		actual = min(from, now)
 	}
 	c := model.Capture{Host: host, Manifest: model.Manifest{FormatVersion: model.FormatVersion, ApplicationVersion: version.String(), StartMonoNS: actual, EndMonoNS: now, RequestedStartMonoNS: start, Health: health, Mode: mode}}
 	c.Manifest.RecordingStartMonoNS = r.started

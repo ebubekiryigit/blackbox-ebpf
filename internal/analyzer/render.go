@@ -49,6 +49,17 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 		t.Notice(&b, terminal.Info, "Synthetic demonstration", "These observations were generated; no host was recorded.")
 	}
 
+	if incident := r.Manifest.AutoIncident; incident != nil {
+		t.Section(&b, "AUTOMATIC CAPTURE")
+		t.Notice(&b, terminal.Info, "Incident detected at "+r.Host.Wall(incident.DetectedMonoNS).UTC().Format("15:04:05.000")+" UTC", "Detection uses polled aggregates, not an exact event timestamp. Related triggers are grouped in this capture.")
+		for _, reason := range incident.Triggers {
+			detail := fmt.Sprintf("%s: %s OOM victims", terminal.Sensor(reason.Family), terminal.Count(reason.Count))
+			if reason.Reason == "critical_latency" {
+				detail = fmt.Sprintf("%s: %s critical latency observations (≥%s)", terminal.Sensor(reason.Family), terminal.Count(reason.Count), time.Duration(reason.ThresholdNS))
+			}
+			t.Line(&b, terminal.Muted, "    ", detail)
+		}
+	}
 	t.Section(&b, "SIGNALS")
 	for _, s := range r.Signals {
 		tone, headline, detail := signalView(r, s)

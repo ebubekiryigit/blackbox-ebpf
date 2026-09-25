@@ -21,7 +21,7 @@ func AddRecordingFlags(flags *pflag.FlagSet) {
 }
 func AddCaptureFlags(flags *pflag.FlagSet) {
 	addFlags(flags, func(key string) bool {
-		return key != "log_level" && key != "socket" && key != "timeout" && key != "history"
+		return key != "log_level" && key != "socket" && key != "timeout" && key != "history" && !strings.HasPrefix(key, "auto_capture.")
 	})
 }
 func AddControlFlags(flags *pflag.FlagSet) {
@@ -62,6 +62,8 @@ func addFlags(flags *pflag.FlagSet, include func(string) bool) {
 					flags.Bool(name, field.Bool(), help)
 				case reflect.String:
 					flags.String(name, field.String(), help)
+				case reflect.Int:
+					flags.Int(name, int(field.Int()), help)
 				case reflect.Slice:
 					flags.StringSlice(name, field.Interface().([]string), help)
 				}

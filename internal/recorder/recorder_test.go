@@ -144,3 +144,42 @@ func TestSnapshotSelectionsWithDelayedObservations(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotFixedWindowAfterWriterDelay(t *testing.T) {
+	r := New(10*time.Second, 1<<20, uint64(time.Second))
+	for i := 1; i <= 10; i++ {
+		now := uint64(time.Duration(i) * time.Second)
+		r.Event(model.Event{Type: "oom", MonoNS: now}, now)
+		r.Metric(model.Metric{Family: "oom", StartMonoNS: now - uint64(time.Second), EndMonoNS: now}, now)
+	}
+	r.Advance(uint64(12 * time.Second))
+	c := r.SnapshotWindow(uint64(3*time.Second), uint64(8*time.Second), model.Host{}, r.Health(), "ebpf")
+	if c.Manifest.EndMonoNS != uint64(8*time.Second) || c.Manifest.RequestedStartMonoNS != uint64(3*time.Second) {
+		t.Fatal("window moved to write time")
+	}
+	var events int
+	for _, s := range c.Segments {
+		for _, e := range s.Events {
+			events++
+			if e.MonoNS < uint64(3*time.Second) || e.MonoNS > uint64(8*time.Second) {
+				t.Fatal("event outside fixed window")
+			}
+		}
+		for _, m := range s.Metrics {
+			if m.StartMonoNS < uint64(3*time.Second) || m.EndMonoNS > uint64(8*time.Second) {
+				t.Fatal("partial interval included")
+			}
+		}
+	}
+	if events != 6 {
+		t.Fatalf("events=%d", events)
+	}
+	r.Advance(uint64(30 * time.Second))
+	empty := r.SnapshotWindow(uint64(3*time.Second), uint64(8*time.Second), model.Host{}, r.Health(), "ebpf")
+	if empty.Manifest.StartMonoNS != empty.Manifest.EndMonoNS || len(empty.Segments) != 0 {
+		t.Fatalf("invalid evicted window: %+v", empty)
+	}
+	if len(c.Segments) == 0 {
+		t.Fatal("selected immutable history lost during eviction")
+	}
+}

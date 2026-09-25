@@ -3,6 +3,7 @@ package capture
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -189,6 +190,9 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 	if c.Manifest.EndMonoNS < c.Manifest.StartMonoNS || c.Manifest.RequestedStartMonoNS > c.Manifest.StartMonoNS || c.Manifest.RecordingStartMonoNS > c.Manifest.StartMonoNS {
 		return c, fmt.Errorf("invalid capture time window")
 	}
+	if !c.Manifest.AutoIncident.Valid(c.Manifest.EndMonoNS) {
+		return c, fmt.Errorf("invalid automatic incident metadata")
+	}
 	for _, s := range c.Segments {
 		for _, e := range s.Events {
 			if e.MonoNS < c.Manifest.StartMonoNS || e.MonoNS > c.Manifest.EndMonoNS {
@@ -220,6 +224,14 @@ func Publish(path string, write func(io.Writer) error) error {
 	return PublishWithLimits(path, config.Default().Capture, write)
 }
 func PublishWithLimits(path string, limits config.CaptureLimits, write func(io.Writer) error) error {
+	return PublishWithContext(context.Background(), path, limits, write)
+}
+
+// PublishWithContext aborts an in-progress write or validation on cancellation.
+func PublishWithContext(ctx context.Context, path string, limits config.CaptureLimits, write func(io.Writer) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	f, e := os.CreateTemp(dir, ".blackbox-*")
 	if e != nil {
@@ -230,30 +242,96 @@ func PublishWithLimits(path string, limits config.CaptureLimits, write func(io.W
 	if e = f.Chmod(0600); e != nil {
 		return e
 	}
-	if e = write(f); e != nil {
+	if e = write(contextWriter{ctx, f}); e != nil {
 		return e
 	}
-	if _, e = f.Seek(0, io.SeekStart); e != nil {
-		return e
+	return finishPublication(ctx, f, limits, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return os.Link(f.Name(), path)
+	})
+}
+
+// PublishInRootWithLimits keeps automatic publication inside an already opened,
+// private directory. name must be unique; its partial file is exclusively created.
+func PublishInRootWithLimits(ctx context.Context, root *os.Root, name string, limits config.CaptureLimits, write func(io.Writer) error) error {
+	if filepath.Base(name) != name {
+		return fmt.Errorf("capture name must not contain a directory")
 	}
-	if _, e = (Container{Limits: limits}).Read(f); e != nil {
-		return fmt.Errorf("validate capture before publication: %w", e)
+	temp := "." + name + ".partial"
+	f, err := root.OpenFile(temp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
 	}
-	if e = f.Sync(); e != nil {
-		return e
+	defer root.Remove(temp)
+	defer f.Close()
+	if err = write(f); err != nil {
+		return err
 	}
-	if e = f.Close(); e != nil {
-		return e
+	return finishPublication(ctx, f, limits, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return root.Link(temp, name)
+	})
+}
+
+func finishPublication(ctx context.Context, f *os.File, limits config.CaptureLimits, publish func() error) error {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
 	}
-	if e = os.Link(f.Name(), path); e != nil {
-		return fmt.Errorf("publish capture (destination must not exist): %w", e)
+	if _, err := (Container{Limits: limits}).Read(contextReader{ctx, f}); err != nil {
+		return fmt.Errorf("validate capture before publication: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := publish(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("publish capture (destination must not exist): %w", err)
 	}
 	return nil
 }
+
 func WriteFile(path string, c model.Capture) error {
 	return WriteFileWithLimits(path, c, config.Default().Capture)
 }
 
 func WriteFileWithLimits(path string, c model.Capture, limits config.CaptureLimits) error {
 	return PublishWithLimits(path, limits, func(w io.Writer) error { return (Container{Limits: limits}).Write(w, c) })
+}
+
+// Validation of an automatic file shares the encoding deadline. The underlying
+// filesystem syscall itself cannot be interrupted while blocked in the kernel.
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+type contextWriter struct {
+	ctx    context.Context
+	writer io.Writer
+}
+
+func (w contextWriter) Write(p []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return w.writer.Write(p)
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }

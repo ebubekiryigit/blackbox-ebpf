@@ -161,3 +161,39 @@ func TestValidCapturesCanUseMinimumDecodedBudget(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticMetadataRoundTripAndValidation(t *testing.T) {
+	c := sample()
+	c.Manifest.AutoIncident = &model.AutoIncident{DetectedMonoNS: 15, EndMonoNS: 20, BeforeNS: 5, AfterNS: 5, Triggers: []model.AutoTrigger{{Family: "oom", Reason: "oom_victim", Count: 1, FirstIntervalStartNS: 10, LastIntervalEndNS: 15}}}
+	var b bytes.Buffer
+	if err := (Container{}).Write(&b, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (Container{}).Read(&b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Manifest.FormatVersion != model.FormatVersion || got.Manifest.AutoIncident.Triggers[0].Count != 1 {
+		t.Fatal("optional metadata changed format")
+	}
+	for _, mutate := range []func(*model.AutoIncident){
+		func(a *model.AutoIncident) { a.AfterNS++ },
+		func(a *model.AutoIncident) { a.Triggers = append(a.Triggers, a.Triggers[0]) },
+		func(a *model.AutoIncident) { a.Triggers[0].Family = "tcp" },
+		func(a *model.AutoIncident) { a.Triggers[0].Count = 0 },
+		func(a *model.AutoIncident) { a.EndMonoNS = 21 },
+	} {
+		clone := *c.Manifest.AutoIncident
+		clone.Triggers = append([]model.AutoTrigger(nil), clone.Triggers...)
+		mutate(&clone)
+		bad := c
+		bad.Manifest.AutoIncident = &clone
+		b.Reset()
+		if err := (Container{}).Write(&b, bad); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (Container{}).Read(&b); err == nil {
+			t.Fatal("invalid automatic metadata accepted")
+		}
+	}
+}

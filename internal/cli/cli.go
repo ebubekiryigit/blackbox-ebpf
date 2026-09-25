@@ -41,6 +41,9 @@ func New() *cobra.Command {
 		}
 		var err error
 		c, err = config.Load(configPath, cmd.Flags())
+		if err == nil && cmd.Name() == "capture" {
+			c.AutoCapture.Enabled = false
+		}
 		if err == nil {
 			logger = logging.New(c.LogLevel, cmd.ErrOrStderr())
 		}
@@ -129,7 +132,7 @@ func New() *cobra.Command {
 		if last <= 0 {
 			return fmt.Errorf("last must be positive")
 		}
-		er := capture.PublishWithLimits(output, c.Capture, func(w io.Writer) error {
+		er := capture.PublishWithContext(cmd.Context(), output, c.Capture, func(w io.Writer) error {
 			_, er := control.CallWithOptions(cmd.Context(), c.Socket, control.Request{Operation: "snapshot", LastNS: int64(last)}, w, c.Control)
 			return er
 		})
@@ -205,6 +208,9 @@ func New() *cobra.Command {
 		case <-timer.C:
 		}
 		result, er := e.Ask(ctx, duration)
+		if result.ReleaseSnapshot != nil {
+			defer result.ReleaseSnapshot()
+		}
 		cancel()
 		runErr := <-run
 		if er != nil {
@@ -213,7 +219,9 @@ func New() *cobra.Command {
 		if runErr != nil {
 			return runErr
 		}
-		return saved(cmd.OutOrStdout(), captureOutput, capture.WriteFileWithLimits(captureOutput, result.Capture, c.Capture))
+		return saved(cmd.OutOrStdout(), captureOutput, capture.PublishWithContext(cmd.Context(), captureOutput, c.Capture, func(w io.Writer) error {
+			return (capture.Container{Limits: c.Capture}).Write(w, result.Capture)
+		}))
 	}}
 	record.Flags().DurationVar(&duration, "duration", config.DefaultCaptureDuration, "new recording window (sets retained history for this run)")
 	record.Flags().StringVarP(&captureOutput, "output", "o", "", "destination (default: generated in the current directory; must not exist)")

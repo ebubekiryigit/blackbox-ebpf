@@ -97,6 +97,11 @@ func TestCommandConfigSurfacesStayScoped(t *testing.T) {
 			})
 			slices.Sort(got)
 			want := append([]string(nil), test.keys...)
+			if test.path[0] == "daemon" || test.path[0] == "config" {
+				for _, key := range []string{"enabled", "directory", "sensors", "before", "after", "max_files", "max_storage"} {
+					want = append(want, "auto_capture."+key)
+				}
+			}
 			slices.Sort(want)
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("config surface = %v, want %v", got, want)

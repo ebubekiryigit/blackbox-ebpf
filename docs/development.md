@@ -39,14 +39,16 @@ make dist           # build versioned Linux release archives and checksums
 
 Portable tests cover config precedence/strictness, retention/time boundaries,
 immutable snapshots, memory pressure, archive integrity/publication, legacy fixtures,
-coverage assessment, output limits/colors and control framing/cancellation. CLI
+coverage assessment, output limits/colors and control framing/cancellation. Automatic capture tests cover fixed windows,
+coalescing, back-to-back incidents, writer contention, storage rotation, and failure recovery. CLI
 regressions exercise a fresh synthetic capture through offline analysis and config
 inspection. They require no BPF privileges; socket tests need local Unix sockets.
 
 Kernel tests load every enabled sensor, exercise fsync flush bookkeeping and genuine
 tracking-map exhaustion, scheduler activity and IPv4/IPv6 reset tuples, and verify
 OOM attachment without inducing a host OOM. A daemon → socket → snapshot → analyzer
-scenario uses non-default resource settings. Tests use their own BPF objects, files
+scenario uses non-default resource settings. Automatic capture integration generates
+bounded disk/scheduler activity and reads a real automatically published capture. Tests use their own BPF objects, files
 and ports; their loopback events may be visible to an existing host-wide recorder.
 Do not restart existing recordings or disturb remote workloads for tests.
 

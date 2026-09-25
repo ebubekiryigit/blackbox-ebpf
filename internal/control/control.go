@@ -85,7 +85,6 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	clients := make(chan struct{}, limits.MaxClients)
-	snapshot := make(chan struct{}, 1)
 	var retryDelay time.Duration
 	for {
 		conn, er := l.Accept()
@@ -151,13 +150,6 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 					respond(Response{Error: "last must be positive"})
 					return
 				}
-				select {
-				case snapshot <- struct{}{}:
-					defer func() { <-snapshot }()
-				default:
-					respond(Response{Error: "a snapshot is already being written"})
-					return
-				}
 			}
 			queryCtx, cancel := context.WithTimeout(ctx, limits.QueryTimeout)
 			defer cancel()
@@ -170,12 +162,15 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 				respond(Response{Error: er.Error()})
 				return
 			}
+			if result.ReleaseSnapshot != nil {
+				defer result.ReleaseSnapshot()
+			}
 			settings := e.Settings()
 			if er = respond(Response{Health: &result.Health, Settings: &settings, Capture: req.Operation == "snapshot"}); er != nil {
 				return
 			}
 			if req.Operation == "snapshot" {
-				if er = (capture.Container{Limits: e.Config.Capture}).Write(&boundedWriter{Writer: conn, remaining: limits.MaxCaptureBytes}, result.Capture); er != nil {
+				if er = (capture.Container{Limits: e.Config.Capture}).Write(&boundedWriter{Writer: conn, remaining: limits.MaxCaptureBytes}, result.Capture); er != nil && ctx.Err() == nil {
 					e.RecordSnapshotFailure(er)
 				}
 			}

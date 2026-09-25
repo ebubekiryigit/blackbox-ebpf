@@ -38,3 +38,23 @@ thresholds:
     warn: 20ms
     # Critical runnable wait threshold. Example: 100ms.
     critical: 100ms
+# Automatic incident files, daemon only. Uses aggregate counters, independent of detail loss.
+auto_capture:
+  # true: save incidents automatically; false: manual snapshots only.
+  enabled: true
+  # Private absolute directory for automatic files. Oldest automatic files rotate within both limits.
+  directory: /var/lib/blackbox/captures/auto
+  # Trigger sources: block_io, scheduler (critical latency), oom (victim count).
+  # Only enabled, available recording sensors participate. TCP is not supported.
+  sensors:
+    - block_io
+    - scheduler
+    - oom
+  # Requested history before first detection: 1s–24h. If history is shorter, coverage is partial.
+  before: 1m
+  # Post-detection window: 0s–24h. Triggers in the first window do not extend it.
+  after: 10s
+  # Maximum published automatic files: 1–10000. Manual captures are not rotated.
+  max_files: 1000
+  # Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.
+  max_storage: 1GiB

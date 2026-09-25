@@ -216,6 +216,11 @@ func Analyze(c model.Capture) Report {
 	return withLoss(r)
 }
 func withLoss(r Report) Report {
+	if incident := r.Manifest.AutoIncident; incident != nil {
+		for i, trigger := range incident.Triggers {
+			r.Findings = append(r.Findings, Finding{Category: "auto_capture", Severity: "info", Summary: fmt.Sprintf("Automatic capture triggered by %s: %d %s observations in polled aggregates.", trigger.Family, trigger.Count, trigger.Reason), Evidence: []EvidenceRef{{Kind: "auto_trigger", Index: i, Value: fmt.Sprintf("intervals=%d..%d threshold_ns=%d", trigger.FirstIntervalStartNS, trigger.LastIntervalEndNS, trigger.ThresholdNS)}}})
+		}
+	}
 	r.Assessment = assess(r)
 	h := r.Manifest.Health
 	if h.MetadataFailures > 0 {

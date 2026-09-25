@@ -21,6 +21,7 @@ Unix socket snapshot → streamed .bbx file → offline analyzer
 | --- | --- |
 | `bpf/` | Raw tracepoint programs, CO-RE field access, aggregation and detail quotas |
 | `internal/sensor` | Embedded object loading, attachment, ring decoding, aggregate polling and health |
+| `internal/autocapture` | Deterministic incident state, bounded trigger metadata, private rotating publication |
 | `internal/app` | One state-owning event loop, monotonic clock, process enrichment and failure policy |
 | `internal/recorder` | Time/memory retention, sealed segments and immutable snapshot selection |
 | `internal/control` | Private versioned Unix socket requests and capture streaming |
@@ -63,6 +64,16 @@ tuple; active resets use the socket's wire port even after its bind port is clea
 Received reset tuples follow the incoming direction. Optional event metadata records
 endpoint provenance and whether a socket was associated, without additional maps
 or connection tracking. IRQ/current-task identity does not establish socket ownership.
+
+## Automatic incidents
+
+The recorder loop feeds aggregate deltas to a trigger controller. One fixed window
+groups overlapping triggers; the next trigger opens another window immediately.
+At most one additional waiting window merges triggers while file output is busy.
+Snapshot selection stays on the single writer; a background worker publishes it.
+Manual and automatic snapshots share one writer lease. The private output directory
+rotates only automatic files within count and byte limits. Optional trigger metadata
+in the capture manifest lets offline analysis explain why the file was created.
 
 ## Persistence and compatibility
 

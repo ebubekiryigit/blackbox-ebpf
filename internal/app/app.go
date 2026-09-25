@@ -19,13 +19,16 @@ import (
 )
 
 type Query struct {
+	ctx   context.Context
 	Last  time.Duration
 	Reply chan Result
 }
 type Result struct {
-	Health  model.Health
-	Capture model.Capture
-	Err     error
+	// ReleaseSnapshot must be called after the returned capture is no longer used.
+	ReleaseSnapshot func()
+	Health          model.Health
+	Capture         model.Capture
+	Err             error
 }
 type Engine struct {
 	Config           config.Config
@@ -37,6 +40,7 @@ type Engine struct {
 	Queries          chan Query
 	ingressDrops     atomic.Uint64
 	SnapshotFailures atomic.Uint64
+	snapshotBusy     atomic.Bool
 	closeMu          sync.Mutex
 	closedSensors    map[string]bool
 	clock            func() (uint64, error)
@@ -96,7 +100,7 @@ func (e *Engine) closeSensor(s sensor.Sensor) {
 	}
 }
 func (e *Engine) Ask(ctx context.Context, last time.Duration) (Result, error) {
-	q := Query{Last: last, Reply: make(chan Result, 1)}
+	q := Query{ctx: ctx, Last: last, Reply: make(chan Result)}
 	select {
 	case e.Queries <- q:
 	case <-ctx.Done():
@@ -166,10 +170,22 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	timer := time.NewTicker(e.Config.Resources.PollInterval)
 	defer timer.Stop()
+	available := make([]string, 0, len(ready))
+	for _, s := range ready {
+		available = append(available, s.Name())
+	}
+	auto := newAutomatic(ctx, e, available)
+	defer auto.close()
 	previous := now
 	disabled := map[string]bool{}
 	health := func() model.Health {
 		h := r.Health()
+		if auto != nil {
+			h.AutoCapture = auto.controller.Health()
+			if until := h.AutoCapture.PendingUntilNS; until > now {
+				h.AutoCapture.PendingForNS = until - now
+			}
+		}
 		h.MetadataFailures = metadata.Failures
 		h.IngressDrops = e.ingressDrops.Load()
 		h.SnapshotFailures = e.SnapshotFailures.Load()
@@ -187,6 +203,9 @@ func (e *Engine) Run(ctx context.Context) error {
 			}
 			if h := s.Health(); h.State != "healthy" {
 				disabled[s.Name()] = true
+				if auto != nil {
+					auto.controller.Unavailable(s.Name())
+				}
 				e.closeSensor(s)
 				if e.Config.Strict {
 					return fmt.Errorf("strict mode: %s failed permanently: %s", h.Name, h.Reason)
@@ -197,12 +216,18 @@ func (e *Engine) Run(ctx context.Context) error {
 			m, er := s.Snapshot(previous, end)
 			if er != nil {
 				disabled[s.Name()] = true
+				if auto != nil {
+					auto.controller.Unavailable(s.Name())
+				}
 				e.closeSensor(s)
 				if e.Config.Strict {
 					return fmt.Errorf("strict mode: %s failed permanently: %w", s.Name(), er)
 				}
 				logger.Error("sensor aggregation failed", "sensor", s.Name(), "error", er)
 				continue
+			}
+			if auto != nil {
+				auto.controller.Observe(m, end)
 			}
 			if !r.Metric(m, end) && !recorderOverloadLogged {
 				recorderOverloadLogged = true
@@ -212,10 +237,46 @@ func (e *Engine) Run(ctx context.Context) error {
 		previous = end
 		return nil
 	}
+	drain := func() error {
+		// Drain only entries already queued so selection cannot starve recording.
+		n := len(e.ingress)
+		for range n {
+			v := <-e.ingress
+			now, err = clock()
+			if err != nil {
+				return err
+			}
+			if !r.Event(metadata.Enrich(v), now) && !recorderOverloadLogged {
+				recorderOverloadLogged = true
+				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
+			}
+		}
+		now, err = clock()
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case result := <-auto.completed():
+			now, err = clock()
+			if err != nil {
+				return err
+			}
+			auto.finish(result)
+		case <-auto.tick():
+			if auto.retryTick() {
+				now, err = clock()
+			} else {
+				err = drain()
+				if err == nil {
+					r.Advance(now)
+					err = collect(now)
+				}
+			}
+			if err != nil {
+				return err
+			}
 		case v := <-e.ingress:
 			now, err = clock()
 			if err != nil {
@@ -225,6 +286,7 @@ func (e *Engine) Run(ctx context.Context) error {
 				recorderOverloadLogged = true
 				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
 			}
+			continue // Detail hot path does not poll automatic state or allocate health.
 		case <-timer.C:
 			now, err = clock()
 			if err != nil {
@@ -235,48 +297,45 @@ func (e *Engine) Run(ctx context.Context) error {
 				return err
 			}
 		case q := <-e.Queries:
+			if q.ctx.Err() != nil {
+				continue
+			}
 			now, err = clock()
 			if err != nil {
 				return err
 			}
 			r.Advance(now)
 			if q.Last < 0 || q.Last > e.Config.History {
-				q.Reply <- Result{Err: fmt.Errorf("snapshot window must be positive and at most configured history %s", e.Config.History)}
+				reply(q, Result{Err: fmt.Errorf("snapshot window must be positive and at most configured history %s", e.Config.History)})
 				continue
 			}
-			// Drain only the queue contents already present, so requests cannot starve recording.
-			n := len(e.ingress)
-			for i := 0; i < n; i++ {
-				v := <-e.ingress
-				now, err = clock()
-				if err != nil {
-					q.Reply <- Result{Err: err}
-					return err
-				}
-				if !r.Event(metadata.Enrich(v), now) && !recorderOverloadLogged {
-					recorderOverloadLogged = true
-					logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
-				}
-			}
-			now, err = clock()
-			if err != nil {
-				q.Reply <- Result{Err: err}
+			if err = drain(); err != nil {
+				reply(q, Result{Err: err})
 				return err
 			}
 			if q.Last > 0 {
 				if err = collect(now); err != nil {
-					q.Reply <- Result{Err: err}
+					reply(q, Result{Err: err})
 					return err
 				}
 			}
 			h := health()
 			result := Result{Health: h}
 			if q.Last > 0 {
-				result.Capture = r.Snapshot(q.Last, now, e.host, h, "ebpf")
+				release, ok := e.beginSnapshot()
+				if !ok {
+					reply(q, Result{Err: fmt.Errorf("a snapshot is already being written")})
+					break // Run automatic scheduling even when this manual request is busy.
+				}
+				result.ReleaseSnapshot = release
+				captureHealth := h
+				captureHealth.AutoCapture = nil
+				result.Capture = r.Snapshot(q.Last, now, e.host, captureHealth, "ebpf")
 				result.Capture.Manifest.Settings = e.Settings()
 			}
-			q.Reply <- result
+			reply(q, result)
 		}
+		auto.progress(now, previous, r, health)
 	}
 }
 

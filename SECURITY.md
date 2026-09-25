@@ -35,3 +35,9 @@ process identities, cgroup paths and network endpoints. It does not
 collect packet payloads, process argv or environments. Captures are not encrypted;
 use appropriate access control and secure transfer. A compressed `.bbx` file is
 not anonymized. Do not commit incident captures or local deployment configuration.
+
+Development builds enable automatic incident files by default. They contain the same
+sensitive metadata as manual captures. Automatic storage uses a private directory
+and rotates its own reserved filenames within count/byte limits. Keep evidence that
+must survive rotation outside that directory, and disable `auto_capture.enabled`
+when unattended persistence is inappropriate. See [operations](docs/operations.md#automatic-incident-captures).

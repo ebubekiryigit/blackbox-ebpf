@@ -17,6 +17,14 @@ precedence is:
 3. Explicit CLI flags, including `--strict=false`.
 4. Semantic validation.
 
+No YAML key is required. Omitting a key uses its compiled default, including
+inside `thresholds` and `auto_capture`. Omitting `--config` uses all defaults.
+If `--config` is supplied, the file must exist and contain one YAML mapping;
+`{}` is valid, but blank and comment-only files are rejected. The supplied Compose
+and systemd commands explicitly pass `/etc/blackbox/config.yml`, so their file
+mount or installation is required. `status` and `snapshot` use the running
+daemon's settings and do not accept a YAML file.
+
 Unprovided flags do not erase YAML values. Viper is isolated inside the loader and
 the application receives only a typed `Config`. Blackbox does not discover a file,
 read setting overrides from environment variables, interpolate values, or reload a
@@ -51,7 +59,19 @@ Sensors must be a YAML sequence containing one or more unique values from
 | `poll_interval` | Aggregate collection interval from 100 ms to 1 minute, no longer than history |
 | `timeout` | End-to-end local control and snapshot deadline from 1 second to 10 minutes |
 | `thresholds.*.warn` | Selects slow event details and produces a warning signal |
-| `thresholds.*.critical` | Produces a critical signal; must exceed the corresponding warn threshold |
+| `thresholds.*.critical` | Produces a critical signal and an automatic latency trigger when selected; must exceed warn |
+| `auto_capture.enabled` | Daemon automatic publication, enabled by default |
+| `auto_capture.directory` | Private absolute output directory; `/var/lib/blackbox/captures/auto` in native and Compose deployments |
+| `auto_capture.sensors` | Trigger sources: `block_io`, `scheduler`, `oom`; intersected with available recording sensors |
+| `auto_capture.before` / `after` | Fixed window around first detection; defaults 1 minute / 10 seconds |
+| `auto_capture.max_files` | Maximum published automatic files, 1–10,000; default 1000 |
+| `auto_capture.max_storage` | Published automatic file bytes, 1 MiB–1 TiB; default 1 GiB. Staging briefly needs extra disk space. |
+
+Automatic capture settings apply to `daemon`, not standalone `capture`. They are
+available as `--auto-capture-*` flags on daemon/config commands. `before` is 1s–24h,
+`after` is 0s–24h. If `history` is shorter than the requested
+window, the capture reports partial coverage. Storage quantities use whole B/KiB/MiB/GiB units
+(use `1024GiB` for 1 TiB). See [rotation and failure semantics](operations.md#automatic-incident-captures).
 
 Warn and critical thresholds apply to device I/O request latency and scheduler
 runnable wait, as named in the example. They do not measure application request

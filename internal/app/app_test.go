@@ -71,6 +71,7 @@ func TestPermanentFailureStrictAndBestEffort(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				defer result.ReleaseSnapshot()
 				if result.Capture.Manifest.Health.Sensors[0].State != "error" {
 					t.Fatal("missing coverage not captured")
 				}

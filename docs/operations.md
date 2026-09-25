@@ -14,7 +14,7 @@ Compose runs with host PID and network namespaces:
 | --- | --- |
 | `/sys/kernel/btf` read-only | Kernel type information for CO-RE relocation and tracepoint layout |
 | `/etc/blackbox/config.yml` read-only bind | Explicit operator configuration |
-| `/captures` writable bind | Explicitly requested snapshots |
+| `/var/lib/blackbox/captures` writable bind | Manual snapshots and rotated automatic captures under `auto/` |
 | `pid: host` | Host process metadata from `/proc` |
 | `network_mode: host` | Host namespace for operation and local workload testing |
 
@@ -34,15 +34,18 @@ external service or listening TCP port.
 
 The runtime image entrypoint is `/app/blackbox`, its image working directory is
 `/app`, and it has no default command. Compose supplies `daemon` explicitly and
-uses `/captures` as the working directory so generated snapshots reach the bind
+uses `/var/lib/blackbox/captures` as the working directory so generated snapshots reach the bind
 mount.
 
 ## Recording and failure policy
 
+For a native install, create `/var/lib/blackbox/captures` with `0700` permissions
+before using this destination; the systemd installation steps below do so.
+
 ```sh
 sudo blackbox daemon --config /etc/blackbox/config.yml
 sudo blackbox status
-sudo blackbox snapshot
+sudo blackbox snapshot -o /var/lib/blackbox/captures/incident.bbx
 ```
 
 Snapshots request preceding history. Use standalone `capture --duration 30s` when
@@ -67,12 +70,106 @@ sudo blackbox daemon --strict --sensors block_io,scheduler
 
 Strict mode requires each enabled sensor to initialize and remain operational.
 Failure returns a non-zero exit code. Sensors explicitly disabled by configuration
-are not required. A strict failure does not automatically save a snapshot.
+are not required. A strict failure does not flush a pending automatic incident or create a final snapshot.
+
+SIGINT and SIGTERM stop the foreground daemon with exit code 0. Shutdown cancels
+automatic writes and closes active snapshot connections; incomplete files are
+removed, while already published captures remain. A sensor or control
+server failure exits non-zero. Filesystem calls already blocked in the kernel may
+delay process exit until the call returns.
 
 `status` returns a non-zero exit code when no sensor remains active, after rendering
 the available diagnostics. The Compose healthcheck therefore marks a running but
 non-recording daemon unhealthy. Partial best-effort coverage remains healthy while
 at least one enabled sensor is recording.
+
+## Automatic incident captures
+
+Automatic capture is enabled by default in the development tree. It is not in the
+v0.1.0 binary release. The daemon uses selected sensors' aggregate counters:
+`block_io` and `scheduler` trigger on critical latency, and `oom` on victim count.
+TCP is not a supported trigger. Disabled or unavailable recording sensors do not
+participate; no active trigger source is shown as `inactive` in status.
+
+Detection runs when aggregates are collected, normally every `poll_interval`.
+It does not depend on retained detail events. The saved detection time is the poll
+observation time, not the exact time of a kernel event. The manifest preserves each
+trigger family's count, threshold, and aggregate interval bounds, with at most
+three reasons. Details and aggregates never trigger the same observation twice.
+
+For a first detection at `t1`, defaults select `[t1 - 60s, t1 + 10s]`. A trigger at
+`t1 + 5s` joins that incident without moving its end. A trigger after `t1 + 10s`
+starts another incident immediately. Detection uses aggregate
+poll times, so intervals spanning a window boundary are assigned by their poll time.
+
+Waiting for the post-window does not hold a snapshot lease or pin history. Manual
+snapshots remain available. One capture may be selected/encoded at a time across
+both paths. A manual request during an active write gets the existing busy error.
+If the automatic window closes while the writer is busy, only its metadata waits.
+One further waiting window groups subsequent triggers, extending its end only while
+the writer is backed up. Its trigger counts remain in the manifest. Selection keeps
+each recorded window even if writing starts later. Memory pressure, startup, or
+eviction during the delay can shorten coverage; the file reports missing history.
+Complete aggregate intervals are preserved; intervals crossing a boundary remain
+excluded as for manual snapshots.
+
+Native and Compose storage default to `/var/lib/blackbox/captures/auto`, inside
+the existing Compose bind mount. Set `auto_capture.directory` in YAML only when a
+different path is needed. The directory must be owned by the daemon user with
+`0700` permissions. Files use `0600`, random sortable
+names, validation, and atomic non-overwriting publication.
+
+The directory is dedicated to automatic output. Blackbox rotates only names matching
+its `blackbox-auto-<UTC timestamp>-<random>.bbx` convention, oldest modification time
+first. Do not rename manual evidence to this reserved pattern. Both `max_files`
+and `max_storage` limit published automatic files. Blackbox writes and validates
+the replacement first, then publishes it and rotates old files. A failed write or
+validation leaves existing captures intact. During staging, disk usage can exceed
+`max_storage` by up to one encoded capture; if the free-space reserve cannot be
+maintained, the write fails without deleting old files. A crash between publication
+and rotation can leave the published quota temporarily exceeded until the next
+write. If rotation itself fails after publication, the new file remains and status
+reports its path in the error. Preserve important files outside the automatic
+directory because successful rotation removes old files by design.
+
+Each write rescans a bounded number of directory entries under an exclusive
+cross-process lock. Restart includes existing files in accounting and removes
+recognized abandoned partial files. New limits are enforced on the next write.
+A single file cannot exceed the smaller of the storage budget and the internal
+512 MiB encoded capture limit. A 64 MiB filesystem free-space reserve is checked
+before output chunks; other processes can still consume that space concurrently.
+Storage exhaustion, directory conflicts, timeouts, and publication failures remain
+visible in logs/status and do not stop sensor collection, even with `--strict`.
+The failed incident is not retried; a later trigger starts another capture
+immediately. Filesystem syscalls already blocked in the kernel are not forcibly
+interrupted by the userspace timeout.
+
+The default budget is 1000 files or 1 GiB, equivalent to 1.024 MiB per file if
+both limits are reached together. Actual sizes vary with detail volume, window
+length and compression, so the byte limit may rotate files sooner. Keep
+`max_storage` proportional to `max_files` when changing either limit, and monitor
+actual file sizes on the target host. The safety bounds allow at most 10,000 files
+or 1 TiB, about 105 MiB per file if both maxima are selected. The directory scan stops after
+20,000 entries, counting unmanaged files too. While a manual writer holds the
+snapshot lease, automatic selection retries every 100 ms without rereading sensors
+or scanning the disk. The 64 MiB free-space reserve applies to staging as well as
+publication and does not protect against concurrent external writes.
+
+`status` reports pending/writing/armed state, participating sources,
+detected count, any waiting window's remaining time, last saved path/time,
+and lifetime saved/coalesced/failure counters. A write in progress takes
+precedence over a waiting window in the state label.
+`analyze` and JSON preserve the automatic reasons independently of retained-window
+counts. Trigger counts are not added to aggregate totals. Trigger metadata that
+outlives evicted source intervals produces a critical verdict with limited
+evidence rather than a green report. Captures exclude transient automatic
+writer state from daemon health; the trigger reasons remain in the manifest.
+
+Stopping or restarting the daemon discards a pending post-window. In-flight output
+is cancelled where possible. Files already published when cancellation is observed
+remain. Automatic writes do not resume pending incidents across restarts;
+previously published files remain available. Standalone `capture` creates only its
+requested output and never enables automatic publication.
 
 ## Systemd
 
@@ -80,6 +177,7 @@ On a Linux host, install the matching binary and a validated configuration:
 
 ```sh
 sudo install -d -m 0755 /etc/blackbox
+sudo install -d -m 0700 /var/lib/blackbox/captures
 # Fresh install only: preserve existing customized config on upgrade.
 sudo install -m 0600 config.example.yml /etc/blackbox/config.yml
 sudo blackbox config check --config /etc/blackbox/config.yml
@@ -130,6 +228,7 @@ Workload observations and evidence quality are shown separately:
 | Amber: **Signals to review** | Slow latency or TCP events were observed; resets can be expected and are not themselves proof of a fault |
 | Red: **Critical latency observed** | I/O or scheduler latency crossed its captured critical threshold; this classifies severity without identifying a root cause |
 | Red: **OOM victims observed** | The kernel selected processes as out-of-memory victims |
+| Red: **Critical trigger detected · evidence limited** | Automatic trigger metadata confirms critical latency or OOM, but the triggering observations are absent from retained aggregates and details; captured-window counts remain separate |
 | Amber: **Evidence limited / insufficient** | Missing sensors, metric intervals or observations limit the conclusion |
 | Cyan: **No activity to assess** | Monitoring yielded no measured activity; I/O/scheduler latency cannot be assessed |
 

@@ -19,6 +19,13 @@ type settingCase struct {
 }
 
 var publicSettingCases = []settingCase{
+	{"auto_capture.enabled", "false", "auto-capture-enabled", "true", func(c Config) any { return c.AutoCapture.Enabled }, false, true},
+	{"auto_capture.directory", "/tmp/auto", "auto-capture-directory", "/tmp/incidents", func(c Config) any { return c.AutoCapture.Directory }, "/tmp/auto", "/tmp/incidents"},
+	{"auto_capture.sensors", "[oom]", "auto-capture-sensors", "block_io,scheduler", func(c Config) any { return c.AutoCapture.Sensors }, []string{"oom"}, []string{"block_io", "scheduler"}},
+	{"auto_capture.before", "30s", "auto-capture-before", "45s", func(c Config) any { return c.AutoCapture.Before }, 30 * time.Second, 45 * time.Second},
+	{"auto_capture.after", "0s", "auto-capture-after", "20s", func(c Config) any { return c.AutoCapture.After }, time.Duration(0), 20 * time.Second},
+	{"auto_capture.max_files", "2", "auto-capture-max-files", "3", func(c Config) any { return c.AutoCapture.MaxFiles }, 2, 3},
+	{"auto_capture.max_storage", "16MiB", "auto-capture-max-storage", "32MiB", func(c Config) any { return c.AutoCapture.MaxStorage }, int64(16 << 20), int64(32 << 20)},
 	{"log_level", "debug", "log-level", "error", func(c Config) any { return c.LogLevel }, "debug", "error"},
 	{"history", "2m", "history", "3m", func(c Config) any { return c.History }, 2 * time.Minute, 3 * time.Minute},
 	{"max_memory", "16MiB", "max-memory", "64MiB", func(c Config) any { return c.MaxMemory }, int64(16 << 20), int64(64 << 20)},

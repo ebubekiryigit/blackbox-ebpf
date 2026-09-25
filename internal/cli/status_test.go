@@ -13,6 +13,7 @@ import (
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/control"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
+	"github.com/ebubekiryigit/blackbox-ebpf/internal/terminal"
 )
 
 func TestStatusReturnsFailureWhenNoSensorIsActive(t *testing.T) {
@@ -58,5 +59,18 @@ func TestStatusReturnsFailureWhenNoSensorIsActive(t *testing.T) {
 	}
 	if serverErr := <-done; serverErr != nil {
 		t.Fatal(serverErr)
+	}
+}
+
+func TestStatusIncludesAutomaticCaptureHealth(t *testing.T) {
+	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, AutoCapture: &model.AutoCaptureHealth{State: "writing", Directory: "/captures/auto", Sensors: []string{"scheduler"}, Detected: 3, Saved: 2, Failures: 1, PendingUntilNS: uint64(time.Hour), PendingForNS: uint64(5 * time.Second), LastPath: "/captures/auto/incident.bbx", LastError: "storage unavailable"}}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"AUTOMATIC CAPTURES", "State: writing", "storage unavailable", "Detected 3 · saved 2", "Window ends in 5s", "COLLECTION NOTES"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %s: %s", want, out.String())
+		}
 	}
 }

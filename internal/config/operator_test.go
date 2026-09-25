@@ -47,7 +47,7 @@ func TestOperatorThresholdAndPollingPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, private := range []string{"resources:", "control:", "capture:", "report:", "detail_rate:"} {
-		if strings.Contains(string(b), private) {
+		if strings.HasPrefix(string(b), private) || strings.Contains(string(b), "\n"+private) {
 			t.Fatalf("effective config exposes %s", private)
 		}
 	}

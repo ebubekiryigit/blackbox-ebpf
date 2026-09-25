@@ -36,7 +36,22 @@ const (
 	MaxControlTimeout               = 10 * time.Minute
 	DefaultCaptureDuration          = 30 * time.Second
 	DefaultDemoOutput               = "demo.bbx"
+	MaxAutoFiles                    = 10000
+	MaxAutoStorage            int64 = 1 << 40
+	AutoDirectoryEntries            = 20000
+	AutoRetryInterval               = 100 * time.Millisecond
+	AutoMinFreeBytes          int64 = 64 << 20
 )
+
+type AutoCapture struct {
+	Enabled    bool
+	Directory  string
+	Sensors    []string
+	Before     time.Duration
+	After      time.Duration
+	MaxFiles   int
+	MaxStorage int64
+}
 
 type Resources struct {
 	PollInterval             time.Duration
@@ -77,9 +92,10 @@ func Default() Config {
 		BlockThreshold: 50 * time.Millisecond, SchedulerThreshold: 20 * time.Millisecond,
 		BlockCritical: 250 * time.Millisecond, SchedulerCritical: 100 * time.Millisecond,
 		DetailRate: 256, Enabled: append([]string(nil), model.Families...),
-		Resources: Resources{PollInterval: time.Second, SegmentInterval: time.Second, IngressEvents: 1024, QueryQueue: 8, MetadataEntries: 1024, MetadataPathBytes: 512, BlockTrackingEntries: 8192, SchedulerTrackingEntries: 16384, RingBytes: 256 << 10},
-		Control:   Control{MaxClients: 8, RequestBytes: 4096, ResponseBytes: 64 << 10, Timeout: 30 * time.Second, QueryTimeout: 30 * time.Second, DialTimeout: time.Second, MaxCaptureBytes: 512 << 20},
-		Capture:   CaptureLimits{MaxDecodedBytes: 256 << 20, MaxEntries: 100000, CompressionWindowBytes: 1 << 20},
-		Report:    Report{Events: 20, VerboseEvents: 100, Processes: 5, VerboseProcesses: 10},
+		AutoCapture: AutoCapture{Enabled: true, Directory: "/var/lib/blackbox/captures/auto", Sensors: []string{"block_io", "scheduler", "oom"}, Before: time.Minute, After: 10 * time.Second, MaxFiles: 1000, MaxStorage: 1 << 30},
+		Resources:   Resources{PollInterval: time.Second, SegmentInterval: time.Second, IngressEvents: 1024, QueryQueue: 8, MetadataEntries: 1024, MetadataPathBytes: 512, BlockTrackingEntries: 8192, SchedulerTrackingEntries: 16384, RingBytes: 256 << 10},
+		Control:     Control{MaxClients: 8, RequestBytes: 4096, ResponseBytes: 64 << 10, Timeout: 30 * time.Second, QueryTimeout: 30 * time.Second, DialTimeout: time.Second, MaxCaptureBytes: 512 << 20},
+		Capture:     CaptureLimits{MaxDecodedBytes: 256 << 20, MaxEntries: 100000, CompressionWindowBytes: 1 << 20},
+		Report:      Report{Events: 20, VerboseEvents: 100, Processes: 5, VerboseProcesses: 10},
 	}
 }

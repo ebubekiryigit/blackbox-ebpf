@@ -73,6 +73,13 @@ blackbox config check
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
+| `--auto-capture-after` | `10s` | Post-detection window: 0s–24h. Triggers in the first window do not extend it. |
+| `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
+| `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
+| `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
@@ -96,6 +103,13 @@ blackbox config show
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
+| `--auto-capture-after` | `10s` | Post-detection window: 0s–24h. Triggers in the first window do not extend it. |
+| `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
+| `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
+| `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
@@ -119,6 +133,13 @@ blackbox daemon
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
+| `--auto-capture-after` | `10s` | Post-detection window: 0s–24h. Triggers in the first window do not extend it. |
+| `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
+| `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
+| `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |

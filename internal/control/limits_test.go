@@ -102,6 +102,73 @@ func TestDaemonShutdownClosesIdleControlClients(t *testing.T) {
 	}
 }
 
+func TestShutdownCancelsActiveSnapshotAndReleasesLease(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+	listener := &singleConnListener{conn: serverConn, closed: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := &app.Engine{Config: config.Default(), Queries: make(chan app.Query)}
+	served := make(chan struct{})
+	released := make(chan struct{})
+	go func() {
+		q := <-e.Queries
+		q.Reply <- app.Result{Capture: app.Demo(), ReleaseSnapshot: func() { close(released) }}
+		close(served)
+	}()
+	done := make(chan error, 1)
+	go func() { done <- serveListener(ctx, listener, e, e.Config.Control) }()
+	if err := json.NewEncoder(clientConn).Encode(Request{Version: model.ProtocolVersion, Operation: "snapshot", LastNS: int64(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-served:
+	case <-time.After(time.Second):
+		t.Fatal("snapshot did not reach active state")
+	}
+	// The net.Pipe client intentionally does not read the response. Closing the
+	// daemon context must interrupt its blocked write and release the lease.
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shutdown waited for blocked snapshot client")
+	}
+	select {
+	case <-released:
+	default:
+		t.Fatal("shutdown leaked snapshot lease")
+	}
+	if e.SnapshotFailures.Load() != 0 {
+		t.Fatal("normal shutdown counted a snapshot write failure")
+	}
+}
+
+type singleConnListener struct {
+	conn   net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	if l.conn != nil {
+		conn := l.conn
+		l.conn = nil
+		return conn, nil
+	}
+	<-l.closed
+	return nil, net.ErrClosed
+}
+func (l *singleConnListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+func (l *singleConnListener) Addr() net.Addr { return controlTestAddr("snapshot") }
+
 func TestBusyControlServerReturnsExplicitError(t *testing.T) {
 	path := shortSocket(t)
 	limits := config.Default().Control

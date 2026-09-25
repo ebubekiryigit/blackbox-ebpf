@@ -78,15 +78,16 @@ type SensorHealth struct {
 	Loss                   Counters `json:"loss"`
 }
 type Health struct {
-	Sensors          []SensorHealth `json:"sensors"`
-	IngressDrops     uint64         `json:"ingress_drops"`
-	RecorderDrops    uint64         `json:"recorder_drops"`
-	EvictedSegments  uint64         `json:"memory_evicted_segments"`
-	MetadataFailures uint64         `json:"metadata_resolution_failures"`
-	SnapshotFailures uint64         `json:"snapshot_write_failures"`
-	RetainedBytes    int64          `json:"retained_bytes"`
-	MaxBytes         int64          `json:"max_bytes"`
-	RetainedFromNS   uint64         `json:"retained_from_ns"`
+	AutoCapture      *AutoCaptureHealth `json:"auto_capture,omitempty"`
+	Sensors          []SensorHealth     `json:"sensors"`
+	IngressDrops     uint64             `json:"ingress_drops"`
+	RecorderDrops    uint64             `json:"recorder_drops"`
+	EvictedSegments  uint64             `json:"memory_evicted_segments"`
+	MetadataFailures uint64             `json:"metadata_resolution_failures"`
+	SnapshotFailures uint64             `json:"snapshot_write_failures"`
+	RetainedBytes    int64              `json:"retained_bytes"`
+	MaxBytes         int64              `json:"max_bytes"`
+	RetainedFromNS   uint64             `json:"retained_from_ns"`
 }
 type Host struct {
 	Hostname     string    `json:"hostname"`
@@ -121,6 +122,7 @@ type RecordingSettings struct {
 }
 
 type Manifest struct {
+	AutoIncident         *AutoIncident     `json:"auto_incident,omitempty"`
 	RecordingStartMonoNS uint64            `json:"recording_start_mono_ns,omitempty"`
 	Settings             RecordingSettings `json:"settings"`
 	FormatVersion        int               `json:"capture_format_version"`

@@ -21,8 +21,19 @@ type fileConfig struct {
 	Timeout      time.Duration `yaml:"timeout" mapstructure:"timeout"`
 	// Socket is a CLI-only endpoint override. Keeping it in the merge struct
 	// lets Viper bind --socket without making it part of the YAML schema.
-	Socket     string     `yaml:"-" mapstructure:"socket"`
-	Thresholds thresholds `yaml:"thresholds" mapstructure:"thresholds"`
+	Socket      string              `yaml:"-" mapstructure:"socket"`
+	Thresholds  thresholds          `yaml:"thresholds" mapstructure:"thresholds"`
+	AutoCapture autoCaptureSettings `yaml:"auto_capture" mapstructure:"auto_capture"`
+}
+
+type autoCaptureSettings struct {
+	Enabled    bool          `yaml:"enabled" mapstructure:"enabled"`
+	Directory  string        `yaml:"directory" mapstructure:"directory"`
+	Sensors    []string      `yaml:"sensors" mapstructure:"sensors"`
+	Before     time.Duration `yaml:"before" mapstructure:"before"`
+	After      time.Duration `yaml:"after" mapstructure:"after"`
+	MaxFiles   int           `yaml:"max_files" mapstructure:"max_files"`
+	MaxStorage string        `yaml:"max_storage" mapstructure:"max_storage"`
 }
 
 type thresholds struct {
@@ -40,7 +51,8 @@ func operatorSettings(c Config) fileConfig {
 		MaxMemory: MemoryText(c.MaxMemory), Sensors: append([]string(nil), c.Enabled...),
 		Strict: c.Strict, PollInterval: c.Resources.PollInterval,
 		Timeout: c.Control.Timeout, Socket: c.Socket,
-		Thresholds: thresholds{latencyLevels{c.BlockThreshold, c.BlockCritical}, latencyLevels{c.SchedulerThreshold, c.SchedulerCritical}},
+		Thresholds:  thresholds{latencyLevels{c.BlockThreshold, c.BlockCritical}, latencyLevels{c.SchedulerThreshold, c.SchedulerCritical}},
+		AutoCapture: autoCaptureSettings{c.AutoCapture.Enabled, c.AutoCapture.Directory, append([]string(nil), c.AutoCapture.Sensors...), c.AutoCapture.Before, c.AutoCapture.After, c.AutoCapture.MaxFiles, MemoryText(c.AutoCapture.MaxStorage)},
 	}
 }
 
@@ -59,6 +71,12 @@ func (s fileConfig) runtime() (Config, error) {
 	c.Control.DialTimeout = min(c.Control.DialTimeout, s.Timeout)
 	c.BlockThreshold, c.BlockCritical = s.Thresholds.BlockIO.Warn, s.Thresholds.BlockIO.Critical
 	c.SchedulerThreshold, c.SchedulerCritical = s.Thresholds.Scheduler.Warn, s.Thresholds.Scheduler.Critical
+	storage, err := Memory(s.AutoCapture.MaxStorage)
+	if err != nil {
+		return Config{}, err
+	}
+	a := s.AutoCapture
+	c.AutoCapture = AutoCapture{a.Enabled, a.Directory, append([]string(nil), a.Sensors...), a.Before, a.After, a.MaxFiles, storage}
 	return c, c.Validate()
 }
 
@@ -139,6 +157,14 @@ func DurationText(value time.Duration) string {
 }
 
 var settingHelp = map[string]string{
+	"auto_capture":                  "Automatic incident files, daemon only. Uses aggregate counters, independent of detail loss.",
+	"auto_capture.enabled":          "true: save incidents automatically; false: manual snapshots only.",
+	"auto_capture.directory":        "Private absolute directory for automatic files. Oldest automatic files rotate within both limits.",
+	"auto_capture.sensors":          "Trigger sources: block_io, scheduler (critical latency), oom (victim count).\nOnly enabled, available recording sensors participate. TCP is not supported.",
+	"auto_capture.before":           "Requested history before first detection: 1s–24h. If history is shorter, coverage is partial.",
+	"auto_capture.after":            "Post-detection window: 0s–24h. Triggers in the first window do not extend it.",
+	"auto_capture.max_files":        "Maximum published automatic files: 1–10000. Manual captures are not rotated.",
+	"auto_capture.max_storage":      "Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.",
 	"log_level":                     "Daemon log verbosity: debug, info, warn, error. Logs go to stderr.",
 	"history":                       "Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.",
 	"max_memory":                    "Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB).\nTotal process memory also includes queues, Go runtime and snapshot work; kernel maps are separate.",

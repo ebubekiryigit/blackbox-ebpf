@@ -7,13 +7,13 @@ services:
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 35s
-    working_dir: /captures
+    working_dir: /var/lib/blackbox/captures
     command: ["daemon", "--config", "/etc/blackbox/config.yml"]
     volumes:
       # BTF enables CO-RE; these sensors do not need bpffs or debugfs mounts.
       - /sys/kernel/btf:/sys/kernel/btf:ro
       - ./config.yml:/etc/blackbox/config.yml:ro
-      - ./captures:/captures
+      - ./captures:/var/lib/blackbox/captures
     # The socket stays inside this container; use docker compose exec for clients.
     healthcheck:
       test: ["CMD", "/app/blackbox", "status"]

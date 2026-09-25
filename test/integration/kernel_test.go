@@ -24,6 +24,7 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 	}
 	dir := t.TempDir()
 	cfg := config.Default()
+	cfg.AutoCapture.Enabled = false
 	cfg.Socket = filepath.Join(dir, "control.sock")
 	cfg.History = 10 * time.Second
 	cfg.Strict = true

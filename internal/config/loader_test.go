@@ -18,6 +18,8 @@ func TestConfigurationPrecedenceAndStrictParsing(t *testing.T) {
 		fail             bool
 	}{
 		{name: "defaults only", history: Default().History},
+		{name: "empty YAML mapping uses defaults", yaml: "{}\n", history: Default().History},
+		{name: "empty nested mapping uses defaults", yaml: "auto_capture: {}\n", history: Default().History},
 		{name: "YAML overrides defaults", yaml: "history: 2m\n", history: 2 * time.Minute},
 		{name: "provided flag overrides YAML", yaml: "history: 2m\n", flag: "3m", history: 3 * time.Minute},
 		{name: "unprovided flag preserves YAML", yaml: "history: 2m\n", history: 2 * time.Minute},

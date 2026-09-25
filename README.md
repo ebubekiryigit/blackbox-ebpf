@@ -29,8 +29,8 @@ mkdir -p captures
 docker compose up -d --build
 
 docker compose exec blackbox /app/blackbox status
-docker compose exec blackbox /app/blackbox snapshot -o /captures/incident.bbx
-docker compose exec blackbox /app/blackbox analyze /captures/incident.bbx
+docker compose exec blackbox /app/blackbox snapshot -o /var/lib/blackbox/captures/incident.bbx
+docker compose exec blackbox /app/blackbox analyze /var/lib/blackbox/captures/incident.bbx
 ```
 
 This starts the daemon with five minutes of bounded rolling history, shows sensor
@@ -42,6 +42,26 @@ The Compose service is privileged and observes the Linux host PID and network
 namespaces. On Docker Desktop it records the Linux VM, not the macOS kernel. Review
 the [host and mount requirements](docs/operations.md#host-requirements-and-docker-mounts)
 before deploying it to a server.
+
+## Automatic incident captures
+
+Source builds now save incidents automatically when selected sensors report critical
+I/O or scheduler latency, or an OOM victim. This feature is unreleased; the v0.1.0
+release binary provides the manual workflow above.
+
+The default window covers one minute before detection and ten seconds afterward.
+Triggers within it share one file. A later trigger opens the next incident immediately.
+Files rotate at 1000 files or 1 GiB, whichever limit is reached first;
+manual snapshots are not rotated.
+Blackbox writes and verifies a replacement before rotating older files. A failed
+write keeps existing captures, but staging briefly needs extra disk space and
+fails without deleting them if the free-space reserve cannot be maintained.
+
+With Compose, files appear in `captures/auto/`. `status` shows the last saved path
+and failures. Analyze a saved file with the same `analyze` command. Set
+`auto_capture.enabled: false` for manual recording only.
+See [automatic capture behavior](docs/operations.md#automatic-incident-captures)
+for timing, storage limits, and failure handling.
 
 ## What Blackbox records
 
@@ -106,6 +126,7 @@ Install it on the recording host:
 ```sh
 sudo install -m 0755 blackbox /usr/local/bin/blackbox
 sudo install -d -m 0755 /etc/blackbox
+sudo install -d -m 0700 /var/lib/blackbox/captures
 sudo install -m 0600 config.example.yml /etc/blackbox/config.yml
 sudo blackbox config check --config /etc/blackbox/config.yml
 sudo blackbox daemon --config /etc/blackbox/config.yml
@@ -141,12 +162,15 @@ path to stdout. Diagnostics use stderr, which keeps shell pipelines predictable.
 
 The operator surface covers log level, retained history and memory, enabled
 sensors, failure policy, polling/control timing, and block I/O and scheduler
-latency thresholds. The commented [config.example.yml](config.example.yml) lists
+latency thresholds, and automatic capture timing/storage. The commented [config.example.yml](config.example.yml) lists
 every accepted value.
 
 Configuration precedence is compiled defaults, explicit YAML, explicit CLI flags,
 then validation. No file is discovered implicitly. Unknown or duplicate keys,
 multiple YAML documents, malformed types, and unsafe values fail before recording.
+No YAML setting is required: the daemon can use compiled defaults without a config
+file. The supplied Compose and systemd examples explicitly reference
+`/etc/blackbox/config.yml`, so that file must exist for those deployments.
 
 ```sh
 blackbox config check --config config.yml

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/terminal"
@@ -12,7 +13,7 @@ import (
 func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) error {
 	var b strings.Builder
 	enabled, active := sensorCounts(h)
-	notes := false
+	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
 	for _, s := range h.Sensors {
 		notes = notes || s.Loss != (model.Counters{})
 	}
@@ -46,6 +47,28 @@ func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) e
 		t.Notice(&b, tone, terminal.Sensor(s.Name)+" — "+state)
 		if detail != "" {
 			t.Line(&b, terminal.Muted, "    ", detail)
+		}
+	}
+	if a := h.AutoCapture; a != nil {
+		t.Section(&b, "AUTOMATIC CAPTURES")
+		tone := terminal.Info
+		if a.LastError != "" || a.State == "inactive" {
+			tone = terminal.Warning
+		}
+		t.Notice(&b, tone, "State: "+a.State, "Sources: "+strings.Join(a.Sensors, ", ")+" · "+a.Directory)
+		t.Line(&b, terminal.Muted, "    ", fmt.Sprintf("Detected %d · saved %d · coalesced %d · failures %d (daemon lifetime)", a.Detected, a.Saved, a.Coalesced, a.Failures))
+		if a.PendingUntilNS != 0 {
+			pending := "Window complete; waiting for snapshot writer"
+			if a.PendingForNS > 0 {
+				pending = "Window ends in " + time.Duration(a.PendingForNS).Round(time.Second).String()
+			}
+			t.Line(&b, terminal.Muted, "    ", pending)
+		}
+		if a.LastPath != "" {
+			t.Line(&b, terminal.Muted, "    ", "Last: "+a.LastPath+" · "+a.LastSavedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
+		}
+		if a.LastError != "" {
+			t.Line(&b, terminal.Warning, "    ", "Last failure: "+a.LastError)
 		}
 	}
 	if notes {
