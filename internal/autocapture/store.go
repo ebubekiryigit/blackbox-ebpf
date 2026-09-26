@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,12 @@ type Store struct{ Config config.Config }
 // Save serializes directory ownership, rotation and publication across daemons.
 // No directory traversal or filesystem work runs on the recorder's goroutine.
 func (s Store) Save(ctx context.Context, c model.Capture) (string, error) {
+	return s.save(ctx, c, rotate)
+}
+
+type rotateFiles func(*os.Root, *os.File, []storedFile, int64, int64, int, config.AutoCapture) ([]storedFile, int64, error)
+
+func (s Store) save(ctx context.Context, c model.Capture, rotateFn rotateFiles) (string, error) {
 	a := s.Config.AutoCapture
 	if c.Manifest.AutoIncident == nil || !c.Manifest.AutoIncident.Valid(c.Manifest.EndMonoNS) {
 		return "", fmt.Errorf("automatic capture requires trigger metadata")
@@ -79,6 +86,14 @@ func (s Store) Save(ctx context.Context, c model.Capture) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Repair an already exceeded quota before accepting another incident. A
+	// previous post-publication rotation failure must not accumulate files.
+	if len(files) > a.MaxFiles || total > a.MaxStorage {
+		files, total, err = rotateFn(root, dir, files, total, 0, 0, a)
+		if err != nil {
+			return "", fmt.Errorf("automatic storage quota remains exceeded: %w", err)
+		}
+	}
 	var random [8]byte
 	if _, err = rand.Read(random[:]); err != nil {
 		return "", err
@@ -90,10 +105,10 @@ func (s Store) Save(ctx context.Context, c model.Capture) (string, error) {
 		return (capture.Container{Limits: s.Config.Capture}).Write(budget, c)
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("automatic capture %s: %w", filepath.Join(a.Directory, name), err)
 	}
 	path := filepath.Join(a.Directory, name)
-	if err := rotate(root, files, total, budget.written, a); err != nil {
+	if _, _, err := rotateFn(root, dir, files, total, budget.written, 1, a); err != nil {
 		return path, fmt.Errorf("capture published at %s but automatic rotation failed: %w", path, err)
 	}
 	return path, nil
@@ -101,27 +116,39 @@ func (s Store) Save(ctx context.Context, c model.Capture) (string, error) {
 
 // Rotate only after the replacement is valid and published. A failed staging
 // write leaves every previously published incident in place.
-func rotate(root *os.Root, files []storedFile, total, added int64, limits config.AutoCapture) error {
-	for len(files)+1 > limits.MaxFiles || total+added > limits.MaxStorage {
+func rotate(root *os.Root, dir *os.File, files []storedFile, total, added int64, incoming int, limits config.AutoCapture) ([]storedFile, int64, error) {
+	removed := false
+	var rotationErr error
+	for len(files)+incoming > limits.MaxFiles || total+added > limits.MaxStorage {
 		if len(files) == 0 {
-			return fmt.Errorf("automatic storage budget exhausted")
+			rotationErr = fmt.Errorf("automatic storage budget exhausted")
+			break
 		}
 		old := files[0]
 		// Do not follow a replaced path or debit bytes for a different file.
 		info, err := root.Lstat(old.name)
 		if err != nil {
-			return err
+			rotationErr = err
+			break
 		}
 		if !info.Mode().IsRegular() || info.Size() != old.size || !info.ModTime().Equal(old.modified) {
-			return fmt.Errorf("managed capture changed during rotation: %s", old.name)
+			rotationErr = fmt.Errorf("managed capture changed during rotation: %s", old.name)
+			break
 		}
 		if err := root.Remove(old.name); err != nil {
-			return err
+			rotationErr = err
+			break
 		}
+		removed = true
 		total -= old.size
 		files = files[1:]
 	}
-	return nil
+	if removed {
+		if err := dir.Sync(); err != nil {
+			rotationErr = errors.Join(rotationErr, fmt.Errorf("sync automatic capture directory after rotation: %w", err))
+		}
+	}
+	return files, total, rotationErr
 }
 
 func scan(ctx context.Context, root *os.Root, dir *os.File) ([]storedFile, int64, error) {

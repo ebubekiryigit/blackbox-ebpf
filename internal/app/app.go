@@ -234,6 +234,9 @@ func (e *Engine) Run(ctx context.Context) error {
 				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
 			}
 		}
+		if len(disabled) == len(e.sensors) {
+			return fmt.Errorf("no active sensors remain after permanent failure")
+		}
 		previous = end
 		return nil
 	}

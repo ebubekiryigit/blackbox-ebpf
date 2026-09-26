@@ -245,12 +245,21 @@ func PublishWithContext(ctx context.Context, path string, limits config.CaptureL
 	if e = write(contextWriter{ctx, f}); e != nil {
 		return e
 	}
-	return finishPublication(ctx, f, limits, func() error {
+	directory, e := os.Open(dir)
+	if e != nil {
+		return e
+	}
+	defer directory.Close()
+	e = finishPublication(ctx, f, directory, limits, func() error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		return os.Link(f.Name(), path)
 	})
+	if e != nil {
+		return fmt.Errorf("capture %s: %w", path, e)
+	}
+	return nil
 }
 
 // PublishInRootWithLimits keeps automatic publication inside an already opened,
@@ -269,7 +278,12 @@ func PublishInRootWithLimits(ctx context.Context, root *os.Root, name string, li
 	if err = write(f); err != nil {
 		return err
 	}
-	return finishPublication(ctx, f, limits, func() error {
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return finishPublication(ctx, f, directory, limits, func() error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -277,7 +291,7 @@ func PublishInRootWithLimits(ctx context.Context, root *os.Root, name string, li
 	})
 }
 
-func finishPublication(ctx context.Context, f *os.File, limits config.CaptureLimits, publish func() error) error {
+func finishPublication(ctx context.Context, f, directory *os.File, limits config.CaptureLimits, publish func() error) error {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -298,6 +312,10 @@ func finishPublication(ctx context.Context, f *os.File, limits config.CaptureLim
 			return ctx.Err()
 		}
 		return fmt.Errorf("publish capture (destination must not exist): %w", err)
+	}
+	// Sync the new name, not only the file contents, before claiming it was saved.
+	if err := directory.Sync(); err != nil {
+		return fmt.Errorf("sync capture directory after publication (destination may exist): %w", err)
 	}
 	return nil
 }

@@ -124,12 +124,15 @@ its `blackbox-auto-<UTC timestamp>-<random>.bbx` convention, oldest modification
 first. Do not rename manual evidence to this reserved pattern. Both `max_files`
 and `max_storage` limit published automatic files. Blackbox writes and validates
 the replacement first, then publishes it and rotates old files. A failed write or
-validation leaves existing captures intact. During staging, disk usage can exceed
+validation normally leaves existing captures intact. When an earlier failure has
+already left the quota exceeded, the next attempt rotates old files before staging
+new evidence. During staging, disk usage can exceed
 `max_storage` by up to one encoded capture; if the free-space reserve cannot be
 maintained, the write fails without deleting old files. A crash between publication
-and rotation can leave the published quota temporarily exceeded until the next
-write. If rotation itself fails after publication, the new file remains and status
-reports its path in the error. Preserve important files outside the automatic
+and rotation can leave the published quota temporarily exceeded. If rotation
+fails after publication, the new file remains and status reports its path in the
+error. The next automatic write first attempts to restore the quota; if that
+fails, it publishes nothing further. Preserve important files outside the automatic
 directory because successful rotation removes old files by design.
 
 Each write rescans a bounded number of directory entries under an exclusive

@@ -142,7 +142,7 @@ func TestSnapshotRejectsIncompleteStreamWithoutPublishing(t *testing.T) {
 	cmd := New()
 	cmd.SetArgs([]string{"snapshot", "--socket", socket, "--last=1s", "-o", destination})
 	err = cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "snapshot was not published") || !strings.Contains(err.Error(), "validate capture before publication") {
+	if err == nil || !strings.Contains(err.Error(), "snapshot failed") || !strings.Contains(err.Error(), "validate capture before publication") {
 		t.Fatalf("incomplete stream was opaque or accepted: %v", err)
 	}
 	if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {

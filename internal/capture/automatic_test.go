@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
@@ -74,5 +75,34 @@ func TestManualPublicationCancellationLeavesNoCapture(t *testing.T) {
 				t.Fatalf("partial or final capture remains: %v %v", entries, err)
 			}
 		})
+	}
+}
+
+func TestPublicationRequiresDirectorySync(t *testing.T) {
+	dir := t.TempDir()
+	temp, err := os.CreateTemp(dir, ".blackbox-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(temp.Name())
+	if err := (Container{}).Write(temp, sample()); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "incident.bbx")
+	err = finishPublication(context.Background(), temp, directory, config.Default().Capture, func() error {
+		return os.Link(temp.Name(), path)
+	})
+	if err == nil || !strings.Contains(err.Error(), "sync capture directory") {
+		t.Fatalf("directory sync failure was reported as a saved capture: %v", err)
+	}
+	if _, err := ReadFile(path); err != nil {
+		t.Fatal("published capture disappeared on sync error", err)
 	}
 }

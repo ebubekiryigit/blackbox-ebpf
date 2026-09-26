@@ -17,11 +17,17 @@ import (
 
 type failingSensor struct {
 	mu     sync.Mutex
+	name   string
 	failed bool
 	closes int
 }
 
-func (*failingSensor) Name() string                             { return "block_io" }
+func (s *failingSensor) Name() string {
+	if s.name == "" {
+		return "block_io"
+	}
+	return s.name
+}
 func (*failingSensor) Start(context.Context, sensor.Sink) error { return nil }
 func (s *failingSensor) Snapshot(start, end uint64) (model.Metric, error) {
 	s.mu.Lock()
@@ -29,7 +35,7 @@ func (s *failingSensor) Snapshot(start, end uint64) (model.Metric, error) {
 	if s.failed {
 		return model.Metric{}, fmt.Errorf("permanent map read failure")
 	}
-	return model.Metric{Family: "block_io", StartMonoNS: start, EndMonoNS: end}, nil
+	return model.Metric{Family: s.Name(), StartMonoNS: start, EndMonoNS: end}, nil
 }
 func (s *failingSensor) Health() model.SensorHealth {
 	s.mu.Lock()
@@ -38,17 +44,31 @@ func (s *failingSensor) Health() model.SensorHealth {
 	if s.failed {
 		state = "error"
 	}
-	return model.SensorHealth{Name: "block_io", State: state, Reason: "permanent map read failure"}
+	return model.SensorHealth{Name: s.Name(), State: state, Reason: "permanent map read failure"}
 }
 func (s *failingSensor) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closes++; return nil }
 func TestPermanentFailureStrictAndBestEffort(t *testing.T) {
-	for _, strict := range []bool{false, true} {
-		t.Run(fmt.Sprint(strict), func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		strict  bool
+		sensors int
+	}{
+		{"best-effort last sensor", false, 1},
+		{"best-effort partial then last", false, 2},
+		{"strict partial failure", true, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			c := config.Default()
-			c.Strict = strict
-			s := &failingSensor{}
+			c.Strict = tc.strict
+			first := &failingSensor{name: "block_io"}
+			sensors := []sensor.Sensor{first}
+			var second *failingSensor
+			if tc.sensors == 2 {
+				second = &failingSensor{name: "scheduler"}
+				sensors = append(sensors, second)
+			}
 			epoch := time.Now()
-			e := &Engine{Config: c, sensors: []sensor.Sensor{s}, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }}
+			e := &Engine{Config: c, sensors: sensors, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }, stopped: make(chan struct{})}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			done := make(chan error, 1)
@@ -56,39 +76,43 @@ func TestPermanentFailureStrictAndBestEffort(t *testing.T) {
 			if _, err := e.Ask(ctx, 0); err != nil {
 				t.Fatal(err)
 			}
-			s.mu.Lock()
-			s.failed = true
-			s.mu.Unlock()
+			first.mu.Lock()
+			first.failed = true
+			first.mu.Unlock()
 			result, err := e.Ask(ctx, time.Second)
-			if strict {
-				if err == nil {
-					t.Fatal("strict mode tolerated permanent failure")
-				}
-				if runErr := <-done; runErr == nil {
-					t.Fatal("strict mode exited successfully")
-				}
-			} else {
+			if !tc.strict && tc.sensors == 2 {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer result.ReleaseSnapshot()
-				if result.Capture.Manifest.Health.Sensors[0].State != "error" {
+				if result.Capture.Manifest.Health.Sensors[0].State != "error" || result.Capture.Manifest.Health.Sensors[1].State != "healthy" {
 					t.Fatal("missing coverage not captured")
 				}
+				result.ReleaseSnapshot()
 				if _, err = e.Ask(ctx, 0); err != nil {
-					t.Fatal("best-effort daemon stopped")
+					t.Fatal("best-effort stopped with a working sensor", err)
 				}
-				cancel()
-				if runErr := <-done; runErr != nil {
-					t.Fatal(runErr)
-				}
+				second.mu.Lock()
+				second.failed = true
+				second.mu.Unlock()
+				_, err = e.Ask(ctx, time.Second)
+			}
+			if err == nil || (tc.strict && !strings.Contains(err.Error(), "failed permanently")) || (!tc.strict && !strings.Contains(err.Error(), "no active sensors")) {
+				t.Fatalf("daemon accepted permanent loss of required coverage: %v", err)
+			}
+			if runErr := <-done; runErr == nil {
+				t.Fatal("daemon exited successfully after permanent sensor failure")
 			}
 			e.Close()
-			s.mu.Lock()
-			closes := s.closes
-			s.mu.Unlock()
-			if closes != 1 {
-				t.Fatalf("sensor closed %d times", closes)
+			for _, s := range []*failingSensor{first, second} {
+				if s == nil {
+					continue
+				}
+				s.mu.Lock()
+				closes := s.closes
+				s.mu.Unlock()
+				if closes != 1 {
+					t.Fatalf("%s closed %d times", s.Name(), closes)
+				}
 			}
 		})
 	}

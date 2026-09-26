@@ -98,6 +98,56 @@ func TestStorageRotatesOldestWithinBothLimitsAndSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestFailedRotationDoesNotAccumulateCaptures(t *testing.T) {
+	for _, limit := range []string{"files", "bytes"} {
+		t.Run(limit, func(t *testing.T) {
+			s := storeFor(t)
+			first, err := s.Save(context.Background(), recording())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if limit == "files" {
+				s.Config.AutoCapture.MaxFiles = 1
+			} else {
+				info, err := os.Stat(first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.Config.AutoCapture.MaxStorage = info.Size()
+			}
+			failedRotate := func(*os.Root, *os.File, []storedFile, int64, int64, int, config.AutoCapture) ([]storedFile, int64, error) {
+				return nil, 0, os.ErrPermission
+			}
+			second, err := s.save(context.Background(), recording(), failedRotate)
+			if !errors.Is(err, os.ErrPermission) || second == "" {
+				t.Fatalf("published capture and rotation error not reported: %q, %v", second, err)
+			}
+			if _, err := capture.ReadFile(second); err != nil {
+				t.Fatal("new evidence lost after rotation failure", err)
+			}
+			if _, err := s.save(context.Background(), recording(), failedRotate); !errors.Is(err, os.ErrPermission) {
+				t.Fatalf("exceeded quota did not block next publication: %v", err)
+			}
+			if got := len(managed(t, s.Config.AutoCapture.Directory)); got != 2 {
+				t.Fatalf("repeated failure accumulated %d captures", got)
+			}
+			last, err := s.Save(context.Background(), recording())
+			if err != nil {
+				t.Fatal("quota did not recover", err)
+			}
+			if got := len(managed(t, s.Config.AutoCapture.Directory)); got != 1 {
+				t.Fatalf("recovery left %d captures", got)
+			}
+			if _, err := capture.ReadFile(last); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(first); !os.IsNotExist(err) {
+				t.Fatal("old capture not rotated", err)
+			}
+		})
+	}
+}
+
 func TestStorageFailuresAndCrashRecovery(t *testing.T) {
 	t.Run("cancelled", func(t *testing.T) {
 		s := storeFor(t)

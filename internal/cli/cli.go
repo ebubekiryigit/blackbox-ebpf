@@ -137,7 +137,7 @@ func New() *cobra.Command {
 			return er
 		})
 		if er != nil {
-			return fmt.Errorf("snapshot was not published: %w", er)
+			return fmt.Errorf("snapshot failed: %w", er)
 		}
 		return saved(cmd.OutOrStdout(), output, nil)
 	}}
