@@ -86,7 +86,30 @@ func TestConfigCommandsUseMergedTypedSettings(t *testing.T) {
 
 func TestConfigShowRoundTripsEveryPublicSetting(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "input.yml")
-	content := "log_level: debug\nhistory: 2m\nmax_memory: 64MiB\nsensors: [scheduler, oom]\nstrict: true\npoll_interval: 2s\ntimeout: 45s\nthresholds:\n  block_io:\n    warn: 60ms\n    critical: 300ms\n  scheduler:\n    warn: 30ms\n    critical: 150ms\n"
+	content := `log_level: debug
+history: 2m
+max_memory: 64MiB
+sensors: [scheduler, oom]
+strict: true
+poll_interval: 2s
+timeout: 45s
+thresholds:
+  block_io:
+    warn: 60ms
+    critical: 300ms
+  scheduler:
+    warn: 30ms
+    critical: 150ms
+auto_capture:
+  enabled: false
+  directory: /tmp/blackbox-auto
+  sensors: [oom]
+  before: 30s
+  after: 0s
+  max_files: 3
+  max_storage: 64MiB
+  write_timeout: 3m
+`
 	if err := os.WriteFile(input, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}

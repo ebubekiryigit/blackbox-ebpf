@@ -58,10 +58,54 @@ and performs portable checks on Linux/macOS. Kernel CI runs for pull requests an
 pushes to `main` on an ephemeral privileged runner; local checks do not replace
 the server compatibility/load matrix.
 
-Benchmarks measure recorder operations, not full daemon RSS, kernel hook overhead
-or production CPU. Compare repeated runs on the same hardware. Report workload,
+Recorder benchmarks do not measure full daemon RSS, kernel hook overhead or
+production CPU. Compare repeated runs on the same hardware. Report workload,
 CPU/RSS, map memory, snapshot latency, retained coverage and drops together before
 making overhead claims.
+
+### Capture decoder baseline (2026-09-26)
+
+`BenchmarkCaptureDecode` in `internal/capture/capture_bench_test.go` decodes one
+independently generated format-1 archive with 200,000 OOM events in one segment.
+Each event has a distinct six-digit process name. The segment is 11,800,061
+decoded JSON bytes (11.25 MiB); the zstd archive was approximately 0.1007 MiB.
+The benchmark uses default capture limits and reads the archive from memory.
+Archive construction precedes `b.ResetTimer`, so `ns/op` and `B/op` measure the
+decode loop, not fixture generation.
+
+The pre-streaming reader came from commit
+`072a4356f23b9b70aede83c37c2c00964ab63af1`. The streaming reader was tested
+at `de5602db2f0495441d1eb4afb91b5f80ddb32b13`; its decoder code is unchanged
+from its introduction in `a9f330a6ae47291d2fd76a358cd2388c8a6380d4`. The same
+benchmark source was copied into an isolated checkout of the older commit.
+Measurements used Go 1.27.1 on macOS 26.5.1, Darwin 25.5.0/arm64, with the CPU
+reported by Go as Apple M4 and `GOMAXPROCS=1`.
+
+| Reader | Median decode time | Allocated per decode | Allocations per decode | Peak RSS, median (range) |
+| --- | ---: | ---: | ---: | ---: |
+| Pre-streaming | 88.0 ms | 300,933,728 B | 200,962 | 227 MB (226–235 MB) |
+| Streaming | 125.7 ms | 320,972,354 B | 400,991 | 178 MB (153–207 MB) |
+
+Time and allocation figures are medians of five `-benchtime=3x` benchmark runs:
+
+```sh
+GOMAXPROCS=1 go test ./internal/capture -run '^$' -bench '^BenchmarkCaptureDecode$' -benchmem -benchtime=3x -count=5
+```
+
+Peak RSS came from four separate one-iteration test processes per reader, using
+macOS `/usr/bin/time -l` and its `maximum resident set size` field. Build the
+test binary first, then run it from `internal/capture` so it finds the fixture:
+
+```sh
+GOMAXPROCS=1 go test -c -o /tmp/blackbox-capture.test ./internal/capture
+(cd internal/capture && GOMAXPROCS=1 /usr/bin/time -l /tmp/blackbox-capture.test -test.run '^$' -test.bench '^BenchmarkCaptureDecode$' -test.benchtime=1x -test.count=1)
+```
+
+RSS includes the Go runtime, benchmark harness and fixture construction; it is
+not a decoder-only peak or a hard memory bound. On this workload streaming used
+less peak process memory but more CPU and total allocations. Keep streaming for
+v0.2; revisit with pprof and Linux measurements if production capture sizes
+make the allocation cost material.
 
 ## Documentation and versions
 

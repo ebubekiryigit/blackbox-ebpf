@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,10 +17,11 @@ import (
 )
 
 type failingSensor struct {
-	mu     sync.Mutex
-	name   string
-	failed bool
-	closes int
+	mu       sync.Mutex
+	name     string
+	startErr error
+	failed   bool
+	closes   int
 }
 
 func (s *failingSensor) Name() string {
@@ -28,7 +30,7 @@ func (s *failingSensor) Name() string {
 	}
 	return s.name
 }
-func (*failingSensor) Start(context.Context, sensor.Sink) error { return nil }
+func (s *failingSensor) Start(context.Context, sensor.Sink) error { return s.startErr }
 func (s *failingSensor) Snapshot(start, end uint64) (model.Metric, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,6 +49,112 @@ func (s *failingSensor) Health() model.SensorHealth {
 	return model.SensorHealth{Name: s.Name(), State: state, Reason: "permanent map read failure"}
 }
 func (s *failingSensor) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closes++; return nil }
+
+func TestSensorStartupFailurePreservesBestEffortCoverageAndStrictFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, wantError string
+		strict          bool
+		working         bool
+	}{
+		{name: "best effort with another sensor", working: true},
+		{name: "best effort without any sensor", wantError: "no sensor initialized successfully"},
+		{name: "strict", strict: true, working: true, wantError: "strict mode: block_io failed initialization"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Strict = tc.strict
+			failed := &failingSensor{name: "block_io", startErr: fmt.Errorf("unsupported kernel hook")}
+			sensors := []sensor.Sensor{failed}
+			if tc.working {
+				sensors = append(sensors, &failingSensor{name: "scheduler"})
+			}
+			epoch := time.Now()
+			e := &Engine{Config: c, sensors: sensors, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }, stopped: make(chan struct{})}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- e.Run(ctx) }()
+			if tc.wantError != "" {
+				if err := <-done; err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("startup did not report %q: %v", tc.wantError, err)
+				}
+			} else {
+				result, err := e.Ask(ctx, time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Capture.Manifest.Health.Sensors) != 2 || result.Capture.Manifest.Health.Sensors[0].State != "unavailable" || !strings.Contains(result.Capture.Manifest.Health.Sensors[0].Reason, "unsupported kernel hook") || result.Capture.Manifest.Health.Sensors[1].State != "healthy" {
+					t.Fatalf("missing startup coverage was not captured: %+v", result.Capture.Manifest.Health.Sensors)
+				}
+				result.ReleaseSnapshot()
+				cancel()
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+			}
+			e.Close()
+			failed.mu.Lock()
+			closes := failed.closes
+			failed.mu.Unlock()
+			if closes != 1 {
+				t.Fatalf("failed sensor closed %d times", closes)
+			}
+		})
+	}
+}
+
+func TestAskEndsOnCancellationOrRecorderShutdown(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		stop       bool
+		queued     bool
+		wantCancel bool
+	}{
+		{name: "cancel before queue", wantCancel: true},
+		{name: "stop before queue", stop: true},
+		{name: "cancel while waiting", queued: true, wantCancel: true},
+		{name: "stop while waiting", queued: true, stop: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			e := &Engine{Queries: make(chan Query), stopped: make(chan struct{})}
+			if !tc.queued {
+				if tc.stop {
+					close(e.stopped)
+				} else {
+					cancel()
+				}
+			}
+			done := make(chan error, 1)
+			go func() { _, err := e.Ask(ctx, time.Second); done <- err }()
+			if tc.queued {
+				select {
+				case <-e.Queries:
+				case <-time.After(time.Second):
+					t.Fatal("snapshot request was not queued")
+				}
+				if tc.stop {
+					close(e.stopped)
+				} else {
+					cancel()
+				}
+			}
+			select {
+			case err := <-done:
+				if tc.wantCancel {
+					if !errors.Is(err, context.Canceled) {
+						t.Fatalf("cancellation was not returned: %v", err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), "recorder stopped") {
+					t.Fatalf("shutdown was not returned: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("snapshot request remained blocked")
+			}
+		})
+	}
+}
 func TestPermanentFailureStrictAndBestEffort(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
