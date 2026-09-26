@@ -54,8 +54,9 @@ Do not restart existing recordings or disturb remote workloads for tests.
 
 Commit `*_bpfel.go`, `*_bpfel.o` and `bpf/abi.h` together. Regenerate using the
 developer tools image to avoid compiler-version drift. CI checks regeneration
-and performs portable checks on Linux/macOS. Kernel CI runs for pull requests on an
-ephemeral privileged runner; local checks do not replace the server compatibility/load matrix.
+and performs portable checks on Linux/macOS. Kernel CI runs for pull requests and
+pushes to `main` on an ephemeral privileged runner; local checks do not replace
+the server compatibility/load matrix.
 
 Benchmarks measure recorder operations, not full daemon RSS, kernel hook overhead
 or production CPU. Compare repeated runs on the same hardware. Report workload,

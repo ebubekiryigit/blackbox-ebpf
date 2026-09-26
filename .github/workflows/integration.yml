@@ -3,6 +3,8 @@ name: Kernel integration
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches: [main]
 permissions:
   contents: read
 jobs:
