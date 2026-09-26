@@ -121,6 +121,9 @@ func (a AutoCapture) Validate() error {
 	if a.MaxFiles < 1 || a.MaxFiles > MaxAutoFiles || a.MaxStorage < MinMemory || a.MaxStorage > MaxAutoStorage {
 		return fmt.Errorf("auto_capture requires max_files between 1 and %d and max_storage between 1MiB and 1TiB", MaxAutoFiles)
 	}
+	if a.WriteTimeout < MinAutoWriteTimeout || a.WriteTimeout > MaxAutoWriteTimeout {
+		return fmt.Errorf("auto_capture.write_timeout must be between %s and %s", MinAutoWriteTimeout, MaxAutoWriteTimeout)
+	}
 	if len(a.Sensors) == 0 {
 		return fmt.Errorf("auto_capture.sensors must include at least one of block_io, scheduler, oom")
 	}

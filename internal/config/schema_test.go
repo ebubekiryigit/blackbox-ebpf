@@ -26,6 +26,7 @@ var publicSettingCases = []settingCase{
 	{"auto_capture.after", "0s", "auto-capture-after", "20s", func(c Config) any { return c.AutoCapture.After }, time.Duration(0), 20 * time.Second},
 	{"auto_capture.max_files", "2", "auto-capture-max-files", "3", func(c Config) any { return c.AutoCapture.MaxFiles }, 2, 3},
 	{"auto_capture.max_storage", "16MiB", "auto-capture-max-storage", "32MiB", func(c Config) any { return c.AutoCapture.MaxStorage }, int64(16 << 20), int64(32 << 20)},
+	{"auto_capture.write_timeout", "3m", "auto-capture-write-timeout", "4m", func(c Config) any { return c.AutoCapture.WriteTimeout }, 3 * time.Minute, 4 * time.Minute},
 	{"log_level", "debug", "log-level", "error", func(c Config) any { return c.LogLevel }, "debug", "error"},
 	{"history", "2m", "history", "3m", func(c Config) any { return c.History }, 2 * time.Minute, 3 * time.Minute},
 	{"max_memory", "16MiB", "max-memory", "64MiB", func(c Config) any { return c.MaxMemory }, int64(16 << 20), int64(64 << 20)},

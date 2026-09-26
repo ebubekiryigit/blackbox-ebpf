@@ -47,7 +47,7 @@ func newAutomatic(ctx context.Context, e *Engine, available []string) *automatic
 			case <-ctx.Done():
 				return
 			case job := <-a.jobs:
-				writeCtx, stop := context.WithTimeout(ctx, e.Config.Control.Timeout)
+				writeCtx, stop := context.WithTimeout(ctx, e.Config.AutoCapture.WriteTimeout)
 				path, err := (autocapture.Store{Config: e.Config}).Save(writeCtx, job.capture)
 				stop()
 				job.capture = model.Capture{}

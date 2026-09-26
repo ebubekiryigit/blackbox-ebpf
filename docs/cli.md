@@ -80,6 +80,7 @@ blackbox config check
 | `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
 | `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
+| `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
@@ -110,6 +111,7 @@ blackbox config show
 | `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
 | `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
+| `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
@@ -140,6 +142,7 @@ blackbox daemon
 | `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
 | `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
+| `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |

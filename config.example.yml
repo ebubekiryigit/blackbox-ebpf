@@ -58,3 +58,5 @@ auto_capture:
   max_files: 1000
   # Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.
   max_storage: 1GiB
+  # Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests.
+  write_timeout: 2m

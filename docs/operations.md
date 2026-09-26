@@ -144,8 +144,9 @@ before output chunks; other processes can still consume that space concurrently.
 Storage exhaustion, directory conflicts, timeouts, and publication failures remain
 visible in logs/status and do not stop sensor collection, even with `--strict`.
 The failed incident is not retried; a later trigger starts another capture
-immediately. Filesystem syscalls already blocked in the kernel are not forcibly
-interrupted by the userspace timeout.
+immediately. `auto_capture.write_timeout` defaults to 2 minutes and is independent
+of the 30-second local control timeout. Filesystem syscalls already blocked in the
+kernel are not forcibly interrupted by the userspace timeout.
 
 The default budget is 1000 files or 1 GiB, equivalent to 1.024 MiB per file if
 both limits are reached together. Actual sizes vary with detail volume, window

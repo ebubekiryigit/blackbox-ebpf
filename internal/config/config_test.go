@@ -31,6 +31,7 @@ func TestInvalidResourceBudgets(t *testing.T) {
 		{"compression window", func(c *Config) { c.Capture.CompressionWindowBytes = MinCompressionWindowBytes + 1 }},
 		{"compression exceeds decoded budget", func(c *Config) { c.Capture.MaxDecodedBytes = MinMemory; c.Capture.CompressionWindowBytes = 2 << 20 }},
 		{"capture entries", func(c *Config) { c.Capture.MaxEntries = 2 }}, {"capture transport smaller than decode", func(c *Config) { c.Control.MaxCaptureBytes = MinMemory }},
+		{"auto write timeout", func(c *Config) { c.AutoCapture.WriteTimeout = 0 }},
 		{"report", func(c *Config) { c.Report.Events = 0 }},
 	}
 	for _, tt := range cases {

@@ -19,6 +19,12 @@ The YAML schema intentionally has no `version` key. It is validated strictly, so
 unknown settings fail instead of being silently ignored. A future incompatible
 schema change will add a migration story only when a real migration exists.
 
+`auto_capture.write_timeout` is additive. Configurations without it use 2 minutes,
+independently of the control timeout. Earlier v0.2 builds used the control timeout
+for automatic writes, which was 30 seconds by default. Set
+`auto_capture.write_timeout: 30s` if preserving that deadline matters during an
+upgrade; a longer write can also hold the snapshot writer lease longer.
+
 Capture and socket discriminators are independent of the application version.
 They prevent incompatible data from being misinterpreted and must not be bumped
 for additive metadata. BPF object and kernel-map details remain internal build
@@ -29,7 +35,10 @@ contracts and are regenerated together.
 The `.bbx` container is a checksummed zstd-compressed tar with a manifest, host
 metadata, ordered JSON segments, and completion marker. Readers bound decoded
 bytes, archive entries, zstd memory, and observation timestamps before accepting a
-file.
+file. Large segment arrays are decoded one observation at a time, but the
+decoded-byte limit is an archive-size limit, not an analyzer RSS cap. Parsed
+objects, individual JSON values, zstd buffers, and other runtime state can
+coexist in memory.
 
 Unknown JSON fields are allowed for additive metadata. Missing optional fields use
 their documented legacy interpretation. Synthetic fixtures under

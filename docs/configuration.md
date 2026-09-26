@@ -57,7 +57,7 @@ Sensors must be a YAML sequence containing one or more unique values from
 | `sensors` | Enabled signal families |
 | `strict` | Stop if any enabled sensor cannot initialize or fails permanently |
 | `poll_interval` | Aggregate collection interval from 100 ms to 1 minute, no longer than history |
-| `timeout` | End-to-end local control and snapshot deadline from 1 second to 10 minutes |
+| `timeout` | End-to-end local control and manual snapshot deadline from 1 second to 10 minutes |
 | `thresholds.*.warn` | Selects slow event details and produces a warning signal |
 | `thresholds.*.critical` | Produces a critical signal and an automatic latency trigger when selected; must exceed warn |
 | `auto_capture.enabled` | Daemon automatic publication, enabled by default |
@@ -66,6 +66,7 @@ Sensors must be a YAML sequence containing one or more unique values from
 | `auto_capture.before` / `after` | Fixed window around first detection; defaults 1 minute / 10 seconds |
 | `auto_capture.max_files` | Maximum published automatic files, 1–10,000; default 1000 |
 | `auto_capture.max_storage` | Published automatic file bytes, 1 MiB–1 TiB; default 1 GiB. Staging briefly needs extra disk space. |
+| `auto_capture.write_timeout` | Deadline for writing and validating one automatic incident, 1 second–10 minutes; default 2 minutes |
 
 Automatic capture settings apply to `daemon`, not standalone `capture`. They are
 available as `--auto-capture-*` flags on daemon/config commands. `before` is 1s–24h,
@@ -86,7 +87,8 @@ CLI-only endpoint choice rather than persisted recording configuration. Pass the
 same `--socket` to `daemon`, `status`, and `snapshot` for a non-default endpoint,
 and use `--timeout` when a client deadline must differ. The file's `timeout` bounds
 server-side work. A control request ends at the earlier of the daemon deadline and
-the client's `--timeout` deadline.
+the client's `--timeout` deadline. Automatic incident persistence uses its own
+`auto_capture.write_timeout` and does not inherit this control deadline.
 
 `max_memory` covers recorder backing capacity and retained strings. It excludes BPF
 maps and rings, queues, process metadata, Go runtime, and compression workspace.

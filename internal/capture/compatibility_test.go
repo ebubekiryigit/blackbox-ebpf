@@ -3,11 +3,13 @@ package capture
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -20,6 +22,10 @@ import (
 // Raw fixtures deliberately bypass the current writer. Old fields and producer
 // versions must keep their meaning even as new optional fields are added.
 func legacyArchive(t *testing.T, names []string) []byte {
+	return legacyArchiveWithOverrides(t, names, nil)
+}
+
+func legacyArchiveWithOverrides(t *testing.T, names []string, overrides map[string][]byte) []byte {
 	t.Helper()
 	var b bytes.Buffer
 	z, err := zstd.NewWriter(&b, zstd.WithEncoderConcurrency(1))
@@ -28,9 +34,12 @@ func legacyArchive(t *testing.T, names []string) []byte {
 	}
 	tw := tar.NewWriter(z)
 	for _, name := range names {
-		body, err := os.ReadFile(filepath.Join("testdata", "v1", filepath.Base(name)))
-		if err != nil {
-			t.Fatal(err)
+		body, ok := overrides[name]
+		if !ok {
+			body, err = os.ReadFile(filepath.Join("testdata", "v1", filepath.Base(name)))
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err = tw.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: int64(len(body))}); err != nil {
 			t.Fatal(err)
@@ -46,6 +55,69 @@ func legacyArchive(t *testing.T, names []string) []byte {
 		t.Fatal(err)
 	}
 	return b.Bytes()
+}
+
+func TestLargeFormatOneSegmentStreamsWithoutChangingDecodedEvidence(t *testing.T) {
+	const count = 40000
+	var segment strings.Builder
+	segment.WriteString(`{"START_MONO_NS":10,"end_mono_ns":20,"future":{"nested":[1,{"keep":"ignored"}]},"Events":[`)
+	for i := 0; i < count; i++ {
+		if i != 0 {
+			segment.WriteByte(',')
+		}
+		segment.WriteString(`{"mono_ns":15,"type":"oom","pid":42,"comm":"fixture"}`)
+	}
+	segment.WriteString(`],"metrics":[]}`)
+	const name = "segments/00000000.json"
+	archive := legacyArchiveWithOverrides(t, []string{"manifest.json", "host.json", name, "complete.json"}, map[string][]byte{name: []byte(segment.String())})
+	got, err := (Container{}).Read(bytes.NewReader(archive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want model.Segment
+	if err := json.Unmarshal([]byte(segment.String()), &want); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Segments) != 1 || !reflect.DeepEqual(got.Segments[0], want) || len(got.Segments[0].Events) != count {
+		t.Fatal("large format-1 segment changed during streaming decode")
+	}
+}
+
+func TestFormatOneEntriesRequireOneCompleteJSONValue(t *testing.T) {
+	names := []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join("testdata", "v1", filepath.Base(name)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, suffix := range []string{" true", " !"} {
+				archive := legacyArchiveWithOverrides(t, names, map[string][]byte{name: append(bytes.Clone(body), suffix...)})
+				if _, err := (Container{}).Read(bytes.NewReader(archive)); err == nil {
+					t.Fatalf("accepted trailing data in %s: %q", name, suffix)
+				}
+			}
+			trimmed := bytes.TrimSpace(body)
+			archive := legacyArchiveWithOverrides(t, names, map[string][]byte{name: trimmed[:len(trimmed)-1]})
+			if _, err := (Container{}).Read(bytes.NewReader(archive)); err == nil {
+				t.Fatalf("accepted truncated JSON in %s", name)
+			}
+		})
+	}
+	archive := legacyArchiveWithOverrides(t, names, map[string][]byte{"segments/00000000.json": []byte(`{"start_mono_ns":10,"end_mono_ns":20,"events":[],"metrics":[]}   `)})
+	if _, err := (Container{}).Read(bytes.NewReader(archive)); err != nil {
+		t.Fatal("rejected a single value followed by whitespace", err)
+	}
+}
+
+func TestReaderRejectsOversizedFormatOneArchive(t *testing.T) {
+	segment := []byte(`{"start_mono_ns":10,"end_mono_ns":20,"future":"` + strings.Repeat("x", 2<<20) + `"}`)
+	archive := legacyArchiveWithOverrides(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"}, map[string][]byte{"segments/00000000.json": segment})
+	limits := config.Default().Capture
+	limits.MaxDecodedBytes = config.MinMemory
+	if _, err := (Container{Limits: limits}).Read(bytes.NewReader(archive)); err == nil {
+		t.Fatal("accepted archive above decoded-byte budget")
+	}
 }
 func TestLegacyV1FixtureAndAdditiveFields(t *testing.T) {
 	b := legacyArchive(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"})

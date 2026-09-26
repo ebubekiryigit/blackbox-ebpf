@@ -27,13 +27,14 @@ type fileConfig struct {
 }
 
 type autoCaptureSettings struct {
-	Enabled    bool          `yaml:"enabled" mapstructure:"enabled"`
-	Directory  string        `yaml:"directory" mapstructure:"directory"`
-	Sensors    []string      `yaml:"sensors" mapstructure:"sensors"`
-	Before     time.Duration `yaml:"before" mapstructure:"before"`
-	After      time.Duration `yaml:"after" mapstructure:"after"`
-	MaxFiles   int           `yaml:"max_files" mapstructure:"max_files"`
-	MaxStorage string        `yaml:"max_storage" mapstructure:"max_storage"`
+	Enabled      bool          `yaml:"enabled" mapstructure:"enabled"`
+	Directory    string        `yaml:"directory" mapstructure:"directory"`
+	Sensors      []string      `yaml:"sensors" mapstructure:"sensors"`
+	Before       time.Duration `yaml:"before" mapstructure:"before"`
+	After        time.Duration `yaml:"after" mapstructure:"after"`
+	MaxFiles     int           `yaml:"max_files" mapstructure:"max_files"`
+	MaxStorage   string        `yaml:"max_storage" mapstructure:"max_storage"`
+	WriteTimeout time.Duration `yaml:"write_timeout" mapstructure:"write_timeout"`
 }
 
 type thresholds struct {
@@ -52,7 +53,7 @@ func operatorSettings(c Config) fileConfig {
 		Strict: c.Strict, PollInterval: c.Resources.PollInterval,
 		Timeout: c.Control.Timeout, Socket: c.Socket,
 		Thresholds:  thresholds{latencyLevels{c.BlockThreshold, c.BlockCritical}, latencyLevels{c.SchedulerThreshold, c.SchedulerCritical}},
-		AutoCapture: autoCaptureSettings{c.AutoCapture.Enabled, c.AutoCapture.Directory, append([]string(nil), c.AutoCapture.Sensors...), c.AutoCapture.Before, c.AutoCapture.After, c.AutoCapture.MaxFiles, MemoryText(c.AutoCapture.MaxStorage)},
+		AutoCapture: autoCaptureSettings{Enabled: c.AutoCapture.Enabled, Directory: c.AutoCapture.Directory, Sensors: append([]string(nil), c.AutoCapture.Sensors...), Before: c.AutoCapture.Before, After: c.AutoCapture.After, MaxFiles: c.AutoCapture.MaxFiles, MaxStorage: MemoryText(c.AutoCapture.MaxStorage), WriteTimeout: c.AutoCapture.WriteTimeout},
 	}
 }
 
@@ -76,7 +77,7 @@ func (s fileConfig) runtime() (Config, error) {
 		return Config{}, err
 	}
 	a := s.AutoCapture
-	c.AutoCapture = AutoCapture{a.Enabled, a.Directory, append([]string(nil), a.Sensors...), a.Before, a.After, a.MaxFiles, storage}
+	c.AutoCapture = AutoCapture{Enabled: a.Enabled, Directory: a.Directory, Sensors: append([]string(nil), a.Sensors...), Before: a.Before, After: a.After, MaxFiles: a.MaxFiles, MaxStorage: storage, WriteTimeout: a.WriteTimeout}
 	return c, c.Validate()
 }
 
@@ -165,6 +166,7 @@ var settingHelp = map[string]string{
 	"auto_capture.after":            "Post-detection window: 0s–24h. Triggers in the first window do not extend it.",
 	"auto_capture.max_files":        "Maximum published automatic files: 1–10000. Manual captures are not rotated.",
 	"auto_capture.max_storage":      "Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.",
+	"auto_capture.write_timeout":    "Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests.",
 	"log_level":                     "Daemon log verbosity: debug, info, warn, error. Logs go to stderr.",
 	"history":                       "Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.",
 	"max_memory":                    "Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB).\nTotal process memory also includes queues, Go runtime and snapshot work; kernel maps are separate.",

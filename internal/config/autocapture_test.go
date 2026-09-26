@@ -4,6 +4,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/spf13/pflag"
 )
 
 func TestAutomaticConfigValidation(t *testing.T) {
@@ -29,6 +32,11 @@ func TestAutomaticConfigValidation(t *testing.T) {
 		{"storage max", "auto_capture:\n  max_storage: 1024GiB", true},
 		{"storage over max", "auto_capture:\n  max_storage: 1025GiB", false},
 		{"storage below min", "auto_capture:\n  max_storage: 1023KiB", false},
+		{"write timeout minimum", "auto_capture:\n  write_timeout: 1s", true},
+		{"write timeout below minimum", "auto_capture:\n  write_timeout: 999ms", false},
+		{"write timeout maximum", "auto_capture:\n  write_timeout: 10m", true},
+		{"write timeout above maximum", "auto_capture:\n  write_timeout: 10m1s", false},
+		{"write timeout invalid type", "auto_capture:\n  write_timeout: 120", false},
 		{"string count", "auto_capture:\n  max_files: '2'", false},
 		{"fractional count", "auto_capture:\n  max_files: 2.5", false},
 		{"numeric storage", "auto_capture:\n  max_storage: 1048576", false},
@@ -44,6 +52,25 @@ func TestAutomaticConfigValidation(t *testing.T) {
 				t.Fatalf("valid=%v error=%v", tt.valid, err)
 			}
 		})
+	}
+}
+func TestAutomaticWriteTimeoutIndependentOfControl(t *testing.T) {
+	previousConfig, err := Load(writeSettingFile(t, "timeout: 1s\n"), nil)
+	if err != nil || previousConfig.AutoCapture.WriteTimeout != 2*time.Minute {
+		t.Fatalf("existing config did not receive independent default: %s, %v", previousConfig.AutoCapture.WriteTimeout, err)
+	}
+	path := writeSettingFile(t, "timeout: 1s\nauto_capture:\n  write_timeout: 3m\n")
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	AddConfigFlags(flags)
+	if err := flags.Set("timeout", "2s"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path, flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Control.Timeout != 2*time.Second || c.AutoCapture.WriteTimeout != 3*time.Minute {
+		t.Fatalf("independent deadlines changed: control=%s auto=%s", c.Control.Timeout, c.AutoCapture.WriteTimeout)
 	}
 }
 func TestEveryPublicFieldHasPrecedenceCoverage(t *testing.T) {

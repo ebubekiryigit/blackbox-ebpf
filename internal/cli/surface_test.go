@@ -98,7 +98,7 @@ func TestCommandConfigSurfacesStayScoped(t *testing.T) {
 			slices.Sort(got)
 			want := append([]string(nil), test.keys...)
 			if test.path[0] == "daemon" || test.path[0] == "config" {
-				for _, key := range []string{"enabled", "directory", "sensors", "before", "after", "max_files", "max_storage"} {
+				for _, key := range []string{"enabled", "directory", "sensors", "before", "after", "max_files", "max_storage", "write_timeout"} {
 					want = append(want, "auto_capture."+key)
 				}
 			}

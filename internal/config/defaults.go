@@ -34,6 +34,8 @@ const (
 	MaxInterval                     = time.Minute
 	MinControlTimeout               = time.Second
 	MaxControlTimeout               = 10 * time.Minute
+	MinAutoWriteTimeout             = time.Second
+	MaxAutoWriteTimeout             = 10 * time.Minute
 	DefaultCaptureDuration          = 30 * time.Second
 	DefaultDemoOutput               = "demo.bbx"
 	MaxAutoFiles                    = 10000
@@ -44,13 +46,14 @@ const (
 )
 
 type AutoCapture struct {
-	Enabled    bool
-	Directory  string
-	Sensors    []string
-	Before     time.Duration
-	After      time.Duration
-	MaxFiles   int
-	MaxStorage int64
+	Enabled      bool
+	Directory    string
+	Sensors      []string
+	Before       time.Duration
+	After        time.Duration
+	MaxFiles     int
+	MaxStorage   int64
+	WriteTimeout time.Duration
 }
 
 type Resources struct {
@@ -92,7 +95,7 @@ func Default() Config {
 		BlockThreshold: 50 * time.Millisecond, SchedulerThreshold: 20 * time.Millisecond,
 		BlockCritical: 250 * time.Millisecond, SchedulerCritical: 100 * time.Millisecond,
 		DetailRate: 256, Enabled: append([]string(nil), model.Families...),
-		AutoCapture: AutoCapture{Enabled: true, Directory: "/var/lib/blackbox/captures/auto", Sensors: []string{"block_io", "scheduler", "oom"}, Before: time.Minute, After: 10 * time.Second, MaxFiles: 1000, MaxStorage: 1 << 30},
+		AutoCapture: AutoCapture{Enabled: true, Directory: "/var/lib/blackbox/captures/auto", Sensors: []string{"block_io", "scheduler", "oom"}, Before: time.Minute, After: 10 * time.Second, MaxFiles: 1000, MaxStorage: 1 << 30, WriteTimeout: 2 * time.Minute},
 		Resources:   Resources{PollInterval: time.Second, SegmentInterval: time.Second, IngressEvents: 1024, QueryQueue: 8, MetadataEntries: 1024, MetadataPathBytes: 512, BlockTrackingEntries: 8192, SchedulerTrackingEntries: 16384, RingBytes: 256 << 10},
 		Control:     Control{MaxClients: 8, RequestBytes: 4096, ResponseBytes: 64 << 10, Timeout: 30 * time.Second, QueryTimeout: 30 * time.Second, DialTimeout: time.Second, MaxCaptureBytes: 512 << 20},
 		Capture:     CaptureLimits{MaxDecodedBytes: 256 << 20, MaxEntries: 100000, CompressionWindowBytes: 1 << 20},

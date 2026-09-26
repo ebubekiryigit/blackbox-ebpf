@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -137,21 +138,19 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 		}
 		seen[h.Name] = true
 		total += h.Size
-		b, e := io.ReadAll(io.LimitReader(t, h.Size))
-		if e != nil {
-			return c, e
-		}
+		entry := &io.LimitedReader{R: t, N: h.Size}
+		decoder := json.NewDecoder(entry)
 		switch h.Name {
 		case "manifest.json":
-			e = json.Unmarshal(b, &c.Manifest)
+			e = decoder.Decode(&c.Manifest)
 			if e == nil {
 				e = model.CheckReadableFormat(c.Manifest.FormatVersion)
 			}
 		case "host.json":
-			e = json.Unmarshal(b, &c.Host)
+			e = decoder.Decode(&c.Host)
 		case "complete.json":
 			var f footer
-			e = json.Unmarshal(b, &f)
+			e = decoder.Decode(&f)
 			completed = true
 			expected = f.Segments
 		default:
@@ -163,10 +162,13 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 				return c, fmt.Errorf("invalid segment sequence")
 			}
 			var s model.Segment
-			e = json.Unmarshal(b, &s)
+			s, e = decodeSegment(decoder)
 			c.Segments = append(c.Segments, s)
 		}
 		if e != nil {
+			return c, fmt.Errorf("decode %s: %w", h.Name, e)
+		}
+		if e = consumeJSONTail(decoder, entry); e != nil {
 			return c, fmt.Errorf("decode %s: %w", h.Name, e)
 		}
 	}
@@ -207,6 +209,124 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 	}
 	return c, nil
 }
+
+// Decode large segments one observation at a time instead of retaining their
+// entire JSON entry alongside the resulting event and metric slices.
+func decodeSegment(decoder *json.Decoder) (model.Segment, error) {
+	var segment model.Segment
+	start, err := decoder.Token()
+	if err != nil || start == nil {
+		return segment, err
+	}
+	if start != json.Delim('{') {
+		return segment, fmt.Errorf("segment must be a JSON object")
+	}
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return segment, err
+		}
+		switch name := key.(string); {
+		case strings.EqualFold(name, "start_mono_ns"):
+			err = decoder.Decode(&segment.StartMonoNS)
+		case strings.EqualFold(name, "end_mono_ns"):
+			err = decoder.Decode(&segment.EndMonoNS)
+		case strings.EqualFold(name, "events"):
+			segment.Events, err = decodeArray[model.Event](decoder)
+		case strings.EqualFold(name, "metrics"):
+			segment.Metrics, err = decodeArray[model.Metric](decoder)
+		default:
+			err = skipJSONValue(decoder)
+		}
+		if err != nil {
+			return segment, err
+		}
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return segment, err
+	}
+	if end != json.Delim('}') {
+		return segment, fmt.Errorf("invalid segment object ending")
+	}
+	return segment, nil
+}
+
+func decodeArray[T any](decoder *json.Decoder) ([]T, error) {
+	start, err := decoder.Token()
+	if err != nil || start == nil {
+		return nil, err
+	}
+	if start != json.Delim('[') {
+		return nil, fmt.Errorf("expected JSON array")
+	}
+	values := make([]T, 0)
+	for decoder.More() {
+		var value T
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if end != json.Delim(']') {
+		return nil, fmt.Errorf("invalid JSON array ending")
+	}
+	return values, nil
+}
+
+func skipJSONValue(decoder *json.Decoder) error {
+	value, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	depth := 0
+	if delim, ok := value.(json.Delim); ok && (delim == '{' || delim == '[') {
+		depth = 1
+	}
+	for depth > 0 {
+		value, err = decoder.Token()
+		if err != nil {
+			return err
+		}
+		if delim, ok := value.(json.Delim); ok {
+			switch delim {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+	}
+	return nil
+}
+
+func consumeJSONTail(decoder *json.Decoder, entry *io.LimitedReader) error {
+	tail := io.MultiReader(decoder.Buffered(), entry)
+	var buffer [4096]byte
+	for {
+		n, err := tail.Read(buffer[:])
+		for _, b := range buffer[:n] {
+			if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+				return fmt.Errorf("entry contains trailing JSON data")
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if entry.N != 0 {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
 func ReadFile(path string) (model.Capture, error) {
 	return ReadFileWithLimits(path, config.Default().Capture)
 }
