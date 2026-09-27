@@ -9,9 +9,6 @@ import (
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 )
 
-// Coincidence is an analysis rule, not proof of causation.
-const coincidenceWindow = time.Second
-
 type EvidenceRef struct {
 	Kind  string `json:"kind"`
 	Index int    `json:"index"`
@@ -192,26 +189,8 @@ func Analyze(c model.Capture) Report {
 			r.Findings = append(r.Findings, Finding{f, "critical", "OOM victims were counted; individual victim details are unavailable.", []EvidenceRef{{"aggregate", len(r.Signals) - 1, fmt.Sprintf("victims=%d", s.Count)}}})
 		}
 	}
-	// Correlate only observed details, within one second and a known process/cgroup.
-	for i, e := range r.Timeline {
-		if e.Type != "block_io" {
-			continue
-		}
-		for j := i + 1; j < len(r.Timeline); j++ {
-			o := r.Timeline[j]
-			if o.MonoNS-e.MonoNS > uint64(coincidenceWindow) {
-				break
-			}
-			if o.Type == e.Type {
-				continue
-			}
-			same := e.TGID != 0 && e.TGID == o.TGID && e.ProcessStartNS != 0 && e.ProcessStartNS == o.ProcessStartNS
-			same = same || (e.CgroupID != 0 && e.CgroupID == o.CgroupID)
-			if same {
-				r.Findings = append(r.Findings, Finding{"correlation", "info", "Different kernel signals coincided within one second for the same process or cgroup; timing does not establish causation.", []EvidenceRef{{"event", i, e.Type}, {"event", j, o.Type}}})
-				return withLoss(r)
-			}
-		}
+	if i, j, ok := firstCoincidence(r.Timeline); ok {
+		r.Findings = append(r.Findings, Finding{"correlation", "info", "Different kernel signals coincided within one second for the same process or cgroup; timing does not establish causation.", []EvidenceRef{{"event", i, r.Timeline[i].Type}, {"event", j, r.Timeline[j].Type}}})
 	}
 	return withLoss(r)
 }
