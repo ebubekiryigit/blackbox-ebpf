@@ -192,20 +192,15 @@ func New() *cobra.Command {
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
 		run := make(chan error, 1)
-		go func() { run <- e.Run(ctx) }()
-		timer := time.NewTimer(duration)
-		defer timer.Stop()
-		select {
-		case er = <-run:
-			if er == nil {
-				return ctx.Err()
-			}
-			return er
-		case <-ctx.Done():
+		ready := make(chan struct{})
+		go func() { run <- e.RunWithReady(ctx, ready) }()
+		runFinished, waitErr := waitCapturePeriod(ctx, ready, run, duration)
+		if waitErr != nil {
 			cancel()
-			<-run
-			return ctx.Err()
-		case <-timer.C:
+			if !runFinished {
+				<-run
+			}
+			return waitErr
 		}
 		result, er := e.Ask(ctx, duration)
 		if result.ReleaseSnapshot != nil {
@@ -258,6 +253,37 @@ func New() *cobra.Command {
 		return err
 	}})
 	return root
+}
+
+// waitCapturePeriod excludes sensor initialization from a standalone capture's
+// requested duration. The bool reports whether the run result was consumed.
+func waitCapturePeriod(ctx context.Context, ready <-chan struct{}, run <-chan error, duration time.Duration) (bool, error) {
+	stopped := func(err error) (bool, error) {
+		if err != nil {
+			return true, err
+		}
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
+		return true, fmt.Errorf("recorder stopped before capture completed")
+	}
+	select {
+	case <-ready:
+	case err := <-run:
+		return stopped(err)
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return false, nil
+	case err := <-run:
+		return stopped(err)
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 
 func addConfigFlag(command *cobra.Command) {

@@ -24,6 +24,22 @@ type failingSensor struct {
 	closes   int
 }
 
+type gatedStartSensor struct {
+	*failingSensor
+	entered chan struct{}
+	resume  chan struct{}
+}
+
+func (s *gatedStartSensor) Start(ctx context.Context, _ sensor.Sink) error {
+	close(s.entered)
+	select {
+	case <-s.resume:
+		return s.startErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (s *failingSensor) Name() string {
 	if s.name == "" {
 		return "block_io"
@@ -49,6 +65,111 @@ func (s *failingSensor) Health() model.SensorHealth {
 	return model.SensorHealth{Name: s.Name(), State: state, Reason: "permanent map read failure"}
 }
 func (s *failingSensor) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closes++; return nil }
+
+func TestRunSignalsReadinessOnlyAfterSensorStartup(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		startErr     error
+		partial      bool
+		wantReady    bool
+		wantRunError string
+	}{
+		{"started", nil, false, true, ""},
+		{"best-effort partial startup", nil, true, true, ""},
+		{"startup failed", errors.New("start failed"), false, false, "no sensor initialized successfully"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := config.Default()
+			c.AutoCapture.Enabled = false
+			s := &gatedStartSensor{failingSensor: &failingSensor{name: "scheduler", startErr: test.startErr}, entered: make(chan struct{}), resume: make(chan struct{})}
+			sensors := []sensor.Sensor{s}
+			if test.partial {
+				sensors = append([]sensor.Sensor{&failingSensor{name: "block_io", startErr: errors.New("unsupported hook")}}, sensors...)
+			}
+			epoch := time.Now()
+			e := &Engine{Config: c, sensors: sensors, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }, stopped: make(chan struct{})}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			ready := make(chan struct{})
+			done := make(chan error, 1)
+			go func() { done <- e.RunWithReady(ctx, ready) }()
+			select {
+			case <-s.entered:
+			case <-ctx.Done():
+				t.Fatal("sensor did not enter Start")
+			}
+			select {
+			case <-ready:
+				t.Fatal("ready before sensor Start completed")
+			default:
+			}
+			close(s.resume)
+			if test.wantReady {
+				select {
+				case <-ready:
+				case err := <-done:
+					t.Fatalf("run stopped before readiness: %v", err)
+				case <-ctx.Done():
+					t.Fatal("readiness timed out")
+				}
+				result, err := e.Ask(ctx, time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if test.partial && (len(result.Capture.Manifest.Health.Sensors) != 2 || result.Capture.Manifest.Health.Sensors[0].State != "unavailable") {
+					t.Fatalf("partial startup coverage was lost: %+v", result.Capture.Manifest.Health.Sensors)
+				}
+				result.ReleaseSnapshot()
+				cancel()
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := <-done; err == nil || !strings.Contains(err.Error(), test.wantRunError) {
+					t.Fatalf("startup error = %v", err)
+				}
+				select {
+				case <-ready:
+					t.Fatal("ready after startup failure")
+				default:
+				}
+			}
+			e.Close()
+		})
+	}
+}
+
+func TestRunDoesNotSignalReadinessWhenStartupIsCanceled(t *testing.T) {
+	c := config.Default()
+	c.AutoCapture.Enabled = false
+	s := &gatedStartSensor{failingSensor: &failingSensor{name: "scheduler"}, entered: make(chan struct{}), resume: make(chan struct{})}
+	e := &Engine{Config: c, sensors: []sensor.Sensor{s}, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), clock: func() (uint64, error) { return uint64(time.Second), nil }, stopped: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- e.RunWithReady(ctx, ready) }()
+	select {
+	case <-s.entered:
+	case <-ctx.Done():
+		t.Fatal("sensor did not enter Start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("canceled startup returned no error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled startup did not stop")
+	}
+	select {
+	case <-ready:
+		t.Fatal("ready after canceled startup")
+	default:
+	}
+	e.Close()
+}
 
 func TestSensorStartupFailurePreservesBestEffortCoverageAndStrictFailure(t *testing.T) {
 	for _, tc := range []struct {

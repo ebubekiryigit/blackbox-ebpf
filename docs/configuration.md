@@ -79,7 +79,10 @@ runnable wait, as named in the example. They do not measure application request
 latency or CPU execution time and do not establish causality.
 
 `history` applies to the daemon. The standalone `capture` command uses its explicit
-`--duration` as both recording duration and retained window. `snapshot --last`
+`--duration` as both recording duration and retained window. Its duration timer
+starts after sensor initialization. If no sensor starts, or strict mode rejects a
+sensor, capture returns an error instead of silently shortening the recording.
+`snapshot --last`
 selects a shorter part of the daemon's history. If `--last` is omitted, the client
 uses the daemon-advertised history. `status` and `snapshot` do not read a config
 file because the running daemon is the source of truth. The Unix socket path is a

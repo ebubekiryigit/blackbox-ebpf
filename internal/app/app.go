@@ -118,6 +118,12 @@ func (e *Engine) Ask(ctx context.Context, last time.Duration) (Result, error) {
 	}
 }
 func (e *Engine) Run(ctx context.Context) error {
+	return e.RunWithReady(ctx, nil)
+}
+
+// RunWithReady signals when sensor startup is complete and recording can serve
+// a capture. Startup errors return without signaling readiness.
+func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) error {
 	logger := e.logger
 	if logger == nil {
 		logger = logging.New(e.Config.LogLevel, os.Stderr)
@@ -256,6 +262,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		}
 		now, err = clock()
 		return err
+	}
+	if readySignal != nil {
+		close(readySignal)
 	}
 	for {
 		select {
