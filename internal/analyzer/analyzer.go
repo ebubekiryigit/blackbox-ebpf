@@ -117,13 +117,19 @@ func Analyze(c model.Capture) Report {
 		tgid  uint32
 		start uint64
 	}
+	const maxOOMEvidenceRefs = 5
 	ps := map[identity]int{}
+	var oomDetails uint64
+	oomEvidence := make([]EvidenceRef, 0, maxOOMEvidenceRefs)
 	for i, e := range r.Timeline {
 		if e.TGID != 0 || e.Comm != "" {
 			ps[identity{e.Comm, e.TGID, e.ProcessStartNS}]++
 		}
 		if e.Type == "oom" {
-			r.Findings = append(r.Findings, Finding{"oom", "critical", "An OOM victim was observed.", []EvidenceRef{{"event", i, fmt.Sprintf("victim %s pid=%d", e.Comm, e.PID)}}})
+			oomDetails++
+			if len(oomEvidence) < maxOOMEvidenceRefs {
+				oomEvidence = append(oomEvidence, EvidenceRef{"event", i, fmt.Sprintf("victim %s pid=%d", e.Comm, e.PID)})
+			}
 		}
 	}
 	for k, n := range ps {
@@ -145,6 +151,14 @@ func Analyze(c model.Capture) Report {
 	for _, f := range model.Families {
 		s := *summaries[f]
 		r.Signals = append(r.Signals, s)
+		if f == "oom" && oomDetails > 0 {
+			observed := max(oomDetails, s.Count)
+			refs := oomEvidence
+			if s.Count > 0 {
+				refs = append([]EvidenceRef{{"aggregate", len(r.Signals) - 1, fmt.Sprintf("victims=%d", s.Count)}}, refs...)
+			}
+			r.Findings = append(r.Findings, Finding{f, "critical", fmt.Sprintf("At least %d OOM victim events were observed; %d individual details were retained.", observed, oomDetails), refs})
+		}
 		if s.State == "disabled" {
 			continue
 		}
@@ -185,7 +199,7 @@ func Analyze(c model.Capture) Report {
 			}
 			r.Findings = append(r.Findings, Finding{f, "warning", "TCP retransmissions or reset transitions were observed.", refs})
 		}
-		if f == "oom" && s.Count > 0 && direct == 0 {
+		if f == "oom" && oomDetails == 0 && s.Count > 0 {
 			r.Findings = append(r.Findings, Finding{f, "critical", "OOM victims were counted; individual victim details are unavailable.", []EvidenceRef{{"aggregate", len(r.Signals) - 1, fmt.Sprintf("victims=%d", s.Count)}}})
 		}
 	}

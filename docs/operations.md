@@ -255,6 +255,8 @@ blackbox status --verbose
 `--verbose` adds lifetime diagnostics and expands the bounded text presentation.
 Normal output omits empty tables. `--json` retains all evidence and never
 contains presentation colors, regardless of `--color`.
+An OOM finding summarizes the observed victim count with a few representative
+references; the JSON timeline retains every recorded OOM detail.
 Wide tables become labeled rows when endpoints or terminal width would cause
 columns to overflow. The largest retained latency is highlighted even when its
 event falls beyond the displayed timeline limit.
