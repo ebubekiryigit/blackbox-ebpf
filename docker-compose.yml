@@ -4,6 +4,7 @@ services:
     image: blackbox
     privileged: true
     pid: host
+    cgroup: host
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 35s

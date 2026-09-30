@@ -39,8 +39,8 @@ Critical incidents are also saved automatically under `captures/auto/`.
 Capture destinations are private and never overwritten, so choose a new `-o` path
 for the next incident.
 
-The Compose service is privileged and observes the Linux host PID and network
-namespaces. On Docker Desktop it records the Linux VM, not the macOS kernel. Review
+The Compose service is privileged and observes the Linux host PID, cgroup and
+network namespaces. On Docker Desktop it records the Linux VM, not the macOS kernel. Review
 the [host and mount requirements](docs/operations.md#host-requirements-and-docker-mounts)
 before deploying it to a server.
 

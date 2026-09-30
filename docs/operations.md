@@ -8,7 +8,7 @@ unavailable even on a newer kernel. Root and a privileged container are the curr
 supported privilege model; narrower capability configurations are not validated.
 A built binary needs no runtime compiler or kernel headers.
 
-Compose runs with host PID and network namespaces:
+Compose runs with host PID, cgroup and network namespaces:
 
 | Path / setting | Use |
 | --- | --- |
@@ -16,6 +16,7 @@ Compose runs with host PID and network namespaces:
 | `/etc/blackbox/config.yml` read-only bind | Explicit operator configuration |
 | `/var/lib/blackbox/captures` writable bind | Manual snapshots and rotated automatic captures under `auto/` |
 | `pid: host` | Host process metadata from `/proc` |
+| `cgroup: host` | Host cgroup paths for observed processes |
 | `network_mode: host` | Host namespace for operation and local workload testing |
 
 The current sensors do **not require** an additional `/sys/fs/bpf` mount: program
