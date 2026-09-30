@@ -104,4 +104,13 @@ func TestFormatAndClockContracts(t *testing.T) {
 	if got := host.Wall(125); !got.Equal(anchor.Add(25 * time.Nanosecond)) {
 		t.Fatalf("monotonic wall conversion changed: %s", got)
 	}
+	if err := host.ValidateClock(); err == nil || !strings.Contains(err.Error(), "clock source is missing") {
+		t.Fatalf("missing clock source was accepted or not explained: %v", err)
+	}
+	for _, source := range []string{"boottime", "synthetic"} {
+		host.ClockSource = source
+		if err := host.ValidateClock(); err != nil {
+			t.Fatalf("valid %s clock rejected: %v", source, err)
+		}
+	}
 }

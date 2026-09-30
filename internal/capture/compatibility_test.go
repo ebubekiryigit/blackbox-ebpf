@@ -124,7 +124,7 @@ func TestIndependentArchiveFixtureAndAdditiveFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Manifest.ApplicationVersion != "0.1.0-legacy-fixture" || c.Manifest.RecordingStartMonoNS != 0 || c.Manifest.Settings.PollIntervalNS != 0 {
+	if c.Manifest.ApplicationVersion != "development-fixture" || c.Manifest.RecordingStartMonoNS != 0 || c.Manifest.Settings.PollIntervalNS != 0 {
 		t.Fatal("archive fixture was reinterpreted")
 	}
 	e := c.Segments[0].Events[0]

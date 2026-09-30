@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,50 @@ func TestClockDiscontinuityRoundTrip(t *testing.T) {
 	got, err := (Container{}).Read(&b)
 	if err != nil || !reflect.DeepEqual(got.Manifest.Health.LastClockChange, c.Manifest.Health.LastClockChange) || got.Host != c.Host {
 		t.Fatalf("clock metadata changed on disk: err=%v capture=%+v", err, got)
+	}
+}
+
+func TestRejectCaptureWithoutClockSource(t *testing.T) {
+	c := sample()
+	c.Host.ClockSource = ""
+	var encoded bytes.Buffer
+	if err := (Container{}).Write(&encoded, c); err == nil || !strings.Contains(err.Error(), "clock source is missing") {
+		t.Fatalf("writer accepted ambiguous clock: %v", err)
+	}
+	encoded.Reset()
+	z, err := zstd.NewWriter(&encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(z)
+	for _, entry := range []struct {
+		name  string
+		value any
+	}{
+		{"manifest.json", c.Manifest},
+		{"host.json", c.Host},
+		{"segments/00000000.json", c.Segments[0]},
+		{"complete.json", footer{Segments: 1}},
+	} {
+		body, err := json.Marshal(entry.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0600, Size: int64(len(body))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Container{}).Read(&encoded); err == nil || !strings.Contains(err.Error(), "clock source is missing") {
+		t.Fatalf("reader accepted ambiguous clock: %v", err)
 	}
 }
 func TestRoundTripPrivatePublicationNoOverwrite(t *testing.T) {

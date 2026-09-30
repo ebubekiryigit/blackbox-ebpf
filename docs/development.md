@@ -38,7 +38,7 @@ make dist           # build versioned Linux release archives and checksums
 ```
 
 Portable tests cover config precedence/strictness, retention/time boundaries,
-immutable snapshots, memory pressure, archive integrity/publication, legacy fixtures,
+immutable snapshots, memory pressure, archive integrity/publication, independent format-1 fixtures,
 coverage assessment, output limits/colors and control framing/cancellation. Automatic capture tests cover fixed windows,
 coalescing, back-to-back incidents, writer contention, storage rotation, and failure recovery. CLI
 regressions exercise a fresh synthetic capture through offline analysis and config

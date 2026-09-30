@@ -121,7 +121,10 @@ func (h Host) Wall(ns uint64) time.Time {
 }
 
 func (h Host) ValidateClock() error {
-	if h.ClockSource != "" && h.ClockSource != "boottime" && h.ClockSource != "synthetic" {
+	if h.ClockSource == "" {
+		return fmt.Errorf("capture clock source is missing; use the binary that wrote this development capture")
+	}
+	if h.ClockSource != "boottime" && h.ClockSource != "synthetic" {
 		return fmt.Errorf("unsupported capture clock source %q", h.ClockSource)
 	}
 	if h.AnchorWall.IsZero() {

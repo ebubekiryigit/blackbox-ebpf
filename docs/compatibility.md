@@ -3,8 +3,9 @@
 Blackbox v0.2 is a public preview. Application releases, YAML configuration,
 `.bbx` captures, and the control socket have separate version contracts. Before
 v1, development captures are not guaranteed to remain compatible across clock
-semantics changes. Preserve captures needed as evidence and analyze them with
-the version that wrote them.
+semantics changes. Captures without a clock source are rejected rather than
+silently interpreted as BOOTTIME. Preserve captures needed as evidence and
+analyze them with the version that wrote them.
 
 | Contract | Current development | Policy |
 | --- | --- | --- |
@@ -78,7 +79,8 @@ changes to `0.2.0`.
 2. Preserve the current config and captures.
 3. Check the new binary with `blackbox version` and
    `blackbox config check --config PATH` before replacement.
-4. Analyze representative old captures with the new binary.
+4. Analyze representative captures with the new binary. Use the previous binary
+   for development captures without a clock source.
 5. Replace the binary or image and restart with the validated config.
 6. Inspect `status`, sensor availability, and lifetime counters, then save and
    analyze a short new capture. In strict mode, verify every enabled sensor.
