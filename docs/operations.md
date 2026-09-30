@@ -200,8 +200,8 @@ before `systemctl restart blackbox`; unsaved history is lost. See [upgrades](com
 
 Normal observations remain in per-CPU histograms and counters, polled at the public
 `poll_interval`. Details cover slow block I/O, scheduler waits, TCP
-retransmissions/resets, and OOM victims. Internal detail quotas are bounded and
-partitioned across possible CPUs; OOM is exempt. Aggregate counters still include
+retransmissions/resets, and OOM victims. Each sensor has a bounded, shared detail
+quota across CPUs; OOM is exempt. Aggregate counters still include
 observations whose details were suppressed.
 
 `max_memory` bounds retained recorder data, including backing buffer

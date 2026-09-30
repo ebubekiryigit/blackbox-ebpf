@@ -13,6 +13,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type tcpDetailBudget struct {
+	_    structs.HostLayout
+	Used uint64
+}
+
 type tcpStats struct {
 	_                      structs.HostLayout
 	Histogram              [11]uint64
@@ -27,8 +32,6 @@ type tcpStats struct {
 	TrackingFailures       uint64
 	Unmatched              uint64
 	BookkeepingCompletions uint64
-	BudgetSecond           uint64
-	BudgetUsed             uint64
 }
 
 // Names of all BPF objects in the ELF.
@@ -36,13 +39,13 @@ type tcpStats struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	tcpMapAggregates          = "aggregates"
+	tcpMapDetailBudgets       = "detail_budgets"
 	tcpMapDetails             = "details"
 	tcpProgReceiveReset       = "receive_reset"
 	tcpProgRetransmit         = "retransmit"
 	tcpProgSendReset          = "send_reset"
 	tcpVarCriticalThresholdNs = "critical_threshold_ns"
 	tcpVarDetailRate          = "detail_rate"
-	tcpVarPossibleCpus        = "possible_cpus"
 	tcpVarThresholdNs         = "threshold_ns"
 )
 
@@ -97,8 +100,9 @@ type tcpProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type tcpMapSpecs struct {
-	Aggregates *ebpf.MapSpec `ebpf:"aggregates"`
-	Details    *ebpf.MapSpec `ebpf:"details"`
+	Aggregates    *ebpf.MapSpec `ebpf:"aggregates"`
+	DetailBudgets *ebpf.MapSpec `ebpf:"detail_budgets"`
+	Details       *ebpf.MapSpec `ebpf:"details"`
 }
 
 // tcpVariableSpecs contains global variables before they are loaded into the kernel.
@@ -107,7 +111,6 @@ type tcpMapSpecs struct {
 type tcpVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.VariableSpec `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 }
 
@@ -131,13 +134,15 @@ func (o *tcpObjects) Close() error {
 //
 // It can be passed to loadTcpObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tcpMaps struct {
-	Aggregates *ebpf.Map `ebpf:"aggregates"`
-	Details    *ebpf.Map `ebpf:"details"`
+	Aggregates    *ebpf.Map `ebpf:"aggregates"`
+	DetailBudgets *ebpf.Map `ebpf:"detail_budgets"`
+	Details       *ebpf.Map `ebpf:"details"`
 }
 
 func (m *tcpMaps) Close() error {
 	return _TcpClose(
 		m.Aggregates,
+		m.DetailBudgets,
 		m.Details,
 	)
 }
@@ -148,7 +153,6 @@ func (m *tcpMaps) Close() error {
 type tcpVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.Variable `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 }
 

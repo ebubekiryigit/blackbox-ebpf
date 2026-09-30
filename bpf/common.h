@@ -21,6 +21,7 @@ typedef __u32 __wsum;
 #define CORE __attribute__((preserve_access_index))
 #define BPF_MAP_TYPE_HASH 1
 #define BPF_MAP_TYPE_PERCPU_ARRAY 6
+#define BPF_MAP_TYPE_LRU_HASH 9
 #define BPF_MAP_TYPE_RINGBUF 27
 #define BPF_ANY 0
 #define BPF_NOEXIST 1
@@ -59,8 +60,9 @@ struct stats {
   __u64 tracking_failures;
   __u64 unmatched;
   __u64 bookkeeping_completions;
-  __u64 budget_second;
-  __u64 budget_used;
+};
+struct detail_budget {
+  __u64 used;
 };
 // This wire structure is fixed-width and little-endian on supported hosts.
 struct event {
@@ -95,10 +97,15 @@ struct {
   // Operational capacity is supplied by the Go loader.
   __uint(max_entries, 1);
 } details SEC(".maps");
+struct {
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
+  __uint(max_entries, 4);
+  __type(key, __u64);
+  __type(value, struct detail_budget);
+} detail_budgets SEC(".maps");
 const volatile __u64 threshold_ns = 0;
 const volatile __u64 critical_threshold_ns = 0;
 const volatile __u32 detail_rate = 0;
-const volatile __u32 possible_cpus = 1;
 static __always_inline struct stats *get_stats(void) {
   __u32 zero = 0;
   return bpf_map_lookup_elem(&aggregates, &zero);
@@ -117,20 +124,26 @@ static __always_inline void histogram(struct stats *s, __u64 ns) {
 }
 static __always_inline int allowed(struct stats *s, __u64 ns) {
   __u64 sec = ns / 1000000000;
-  if (s->budget_second != sec) {
-    s->budget_second = sec;
-    s->budget_used = 0;
+  struct detail_budget *budget = bpf_map_lookup_elem(&detail_budgets, &sec);
+  if (!budget) {
+    struct detail_budget empty = {};
+    int rc = bpf_map_update_elem(&detail_budgets, &sec, &empty, BPF_NOEXIST);
+    if (rc && rc != -17) {
+      __sync_fetch_and_add(&s->tracking_failures, 1);
+      return 0;
+    }
+    budget = bpf_map_lookup_elem(&detail_budgets, &sec);
   }
-  __u32 n = possible_cpus;
-  if (!n)
-    n = 1;
-  __u32 quota =
-      detail_rate / n + (bpf_get_smp_processor_id() < detail_rate % n);
-  __sync_fetch_and_add(&s->budget_used, 1);
-  if (s->budget_used > quota) {
+  if (!budget) {
+    __sync_fetch_and_add(&s->tracking_failures, 1);
+    return 0;
+  }
+  if (budget->used >= detail_rate) {
     __sync_fetch_and_add(&s->suppressed, 1);
     return 0;
   }
+  // A race near the limit can admit up to one extra detail per concurrent CPU.
+  __sync_fetch_and_add(&budget->used, 1);
   return 1;
 }
 static __always_inline void task_identity(struct event *e,

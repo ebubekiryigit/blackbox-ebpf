@@ -28,7 +28,6 @@ type wireStats struct {
 	Count, Anomalies, Critical, Bytes, Retransmits, Resets uint64
 	RingFailures, Suppressed, TrackingFailures, Unmatched  uint64
 	BookkeepingCompletions                                 uint64
-	BudgetSecond, BudgetUsed                               uint64
 }
 type wireEvent struct {
 	MonoNS, LatencyNS, CgroupID, ProcessStartNS, Bytes uint64
@@ -102,7 +101,7 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 		}
 		spec, err := d.load()
 		if err == nil {
-			constants := map[string]interface{}{"detail_rate": c.DetailRate, "possible_cpus": uint32(cpus)}
+			constants := map[string]interface{}{"detail_rate": c.DetailRate}
 			// Unused constants are optimized away by Clang.
 			for k := range constants {
 				if spec.Variables[k] == nil {

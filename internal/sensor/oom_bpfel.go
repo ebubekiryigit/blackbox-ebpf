@@ -13,6 +13,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type oomDetailBudget struct {
+	_    structs.HostLayout
+	Used uint64
+}
+
 type oomStats struct {
 	_                      structs.HostLayout
 	Histogram              [11]uint64
@@ -27,8 +32,6 @@ type oomStats struct {
 	TrackingFailures       uint64
 	Unmatched              uint64
 	BookkeepingCompletions uint64
-	BudgetSecond           uint64
-	BudgetUsed             uint64
 }
 
 // Names of all BPF objects in the ELF.
@@ -36,11 +39,11 @@ type oomStats struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	oomMapAggregates          = "aggregates"
+	oomMapDetailBudgets       = "detail_budgets"
 	oomMapDetails             = "details"
 	oomProgVictim             = "victim"
 	oomVarCriticalThresholdNs = "critical_threshold_ns"
 	oomVarDetailRate          = "detail_rate"
-	oomVarPossibleCpus        = "possible_cpus"
 	oomVarThresholdNs         = "threshold_ns"
 	oomVarVictimTaskArg       = "victim_task_arg"
 )
@@ -94,8 +97,9 @@ type oomProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type oomMapSpecs struct {
-	Aggregates *ebpf.MapSpec `ebpf:"aggregates"`
-	Details    *ebpf.MapSpec `ebpf:"details"`
+	Aggregates    *ebpf.MapSpec `ebpf:"aggregates"`
+	DetailBudgets *ebpf.MapSpec `ebpf:"detail_budgets"`
+	Details       *ebpf.MapSpec `ebpf:"details"`
 }
 
 // oomVariableSpecs contains global variables before they are loaded into the kernel.
@@ -104,7 +108,6 @@ type oomMapSpecs struct {
 type oomVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.VariableSpec `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 	VictimTaskArg       *ebpf.VariableSpec `ebpf:"victim_task_arg"`
 }
@@ -129,13 +132,15 @@ func (o *oomObjects) Close() error {
 //
 // It can be passed to loadOomObjects or ebpf.CollectionSpec.LoadAndAssign.
 type oomMaps struct {
-	Aggregates *ebpf.Map `ebpf:"aggregates"`
-	Details    *ebpf.Map `ebpf:"details"`
+	Aggregates    *ebpf.Map `ebpf:"aggregates"`
+	DetailBudgets *ebpf.Map `ebpf:"detail_budgets"`
+	Details       *ebpf.Map `ebpf:"details"`
 }
 
 func (m *oomMaps) Close() error {
 	return _OomClose(
 		m.Aggregates,
+		m.DetailBudgets,
 		m.Details,
 	)
 }
@@ -146,7 +151,6 @@ func (m *oomMaps) Close() error {
 type oomVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.Variable `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 	VictimTaskArg       *ebpf.Variable `ebpf:"victim_task_arg"`
 }

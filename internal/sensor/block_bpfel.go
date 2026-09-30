@@ -13,6 +13,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type blockDetailBudget struct {
+	_    structs.HostLayout
+	Used uint64
+}
+
 type blockInflight struct {
 	_        structs.HostLayout
 	Start    uint64
@@ -55,8 +60,6 @@ type blockStats struct {
 	TrackingFailures       uint64
 	Unmatched              uint64
 	BookkeepingCompletions uint64
-	BudgetSecond           uint64
-	BudgetUsed             uint64
 }
 
 // Names of all BPF objects in the ELF.
@@ -64,13 +67,13 @@ type blockStats struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	blockMapAggregates          = "aggregates"
+	blockMapDetailBudgets       = "detail_budgets"
 	blockMapDetails             = "details"
 	blockMapStarts              = "starts"
 	blockProgComplete           = "complete"
 	blockProgIssue              = "issue"
 	blockVarCriticalThresholdNs = "critical_threshold_ns"
 	blockVarDetailRate          = "detail_rate"
-	blockVarPossibleCpus        = "possible_cpus"
 	blockVarRqArgIndex          = "rq_arg_index"
 	blockVarThresholdNs         = "threshold_ns"
 )
@@ -125,9 +128,10 @@ type blockProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type blockMapSpecs struct {
-	Aggregates *ebpf.MapSpec `ebpf:"aggregates"`
-	Details    *ebpf.MapSpec `ebpf:"details"`
-	Starts     *ebpf.MapSpec `ebpf:"starts"`
+	Aggregates    *ebpf.MapSpec `ebpf:"aggregates"`
+	DetailBudgets *ebpf.MapSpec `ebpf:"detail_budgets"`
+	Details       *ebpf.MapSpec `ebpf:"details"`
+	Starts        *ebpf.MapSpec `ebpf:"starts"`
 }
 
 // blockVariableSpecs contains global variables before they are loaded into the kernel.
@@ -136,7 +140,6 @@ type blockMapSpecs struct {
 type blockVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.VariableSpec `ebpf:"possible_cpus"`
 	RqArgIndex          *ebpf.VariableSpec `ebpf:"rq_arg_index"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 }
@@ -161,14 +164,16 @@ func (o *blockObjects) Close() error {
 //
 // It can be passed to loadBlockObjects or ebpf.CollectionSpec.LoadAndAssign.
 type blockMaps struct {
-	Aggregates *ebpf.Map `ebpf:"aggregates"`
-	Details    *ebpf.Map `ebpf:"details"`
-	Starts     *ebpf.Map `ebpf:"starts"`
+	Aggregates    *ebpf.Map `ebpf:"aggregates"`
+	DetailBudgets *ebpf.Map `ebpf:"detail_budgets"`
+	Details       *ebpf.Map `ebpf:"details"`
+	Starts        *ebpf.Map `ebpf:"starts"`
 }
 
 func (m *blockMaps) Close() error {
 	return _BlockClose(
 		m.Aggregates,
+		m.DetailBudgets,
 		m.Details,
 		m.Starts,
 	)
@@ -180,7 +185,6 @@ func (m *blockMaps) Close() error {
 type blockVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.Variable `ebpf:"possible_cpus"`
 	RqArgIndex          *ebpf.Variable `ebpf:"rq_arg_index"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 }

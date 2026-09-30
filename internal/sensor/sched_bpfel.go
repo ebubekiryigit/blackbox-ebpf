@@ -13,6 +13,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type schedDetailBudget struct {
+	_    structs.HostLayout
+	Used uint64
+}
+
 type schedStats struct {
 	_                      structs.HostLayout
 	Histogram              [11]uint64
@@ -27,8 +32,6 @@ type schedStats struct {
 	TrackingFailures       uint64
 	Unmatched              uint64
 	BookkeepingCompletions uint64
-	BudgetSecond           uint64
-	BudgetUsed             uint64
 }
 
 // Names of all BPF objects in the ELF.
@@ -36,6 +39,7 @@ type schedStats struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	schedMapAggregates          = "aggregates"
+	schedMapDetailBudgets       = "detail_budgets"
 	schedMapDetails             = "details"
 	schedMapRunnable            = "runnable"
 	schedProgExitTask           = "exit_task"
@@ -44,7 +48,6 @@ const (
 	schedProgWakeupNew          = "wakeup_new"
 	schedVarCriticalThresholdNs = "critical_threshold_ns"
 	schedVarDetailRate          = "detail_rate"
-	schedVarPossibleCpus        = "possible_cpus"
 	schedVarThresholdNs         = "threshold_ns"
 )
 
@@ -100,9 +103,10 @@ type schedProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type schedMapSpecs struct {
-	Aggregates *ebpf.MapSpec `ebpf:"aggregates"`
-	Details    *ebpf.MapSpec `ebpf:"details"`
-	Runnable   *ebpf.MapSpec `ebpf:"runnable"`
+	Aggregates    *ebpf.MapSpec `ebpf:"aggregates"`
+	DetailBudgets *ebpf.MapSpec `ebpf:"detail_budgets"`
+	Details       *ebpf.MapSpec `ebpf:"details"`
+	Runnable      *ebpf.MapSpec `ebpf:"runnable"`
 }
 
 // schedVariableSpecs contains global variables before they are loaded into the kernel.
@@ -111,7 +115,6 @@ type schedMapSpecs struct {
 type schedVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.VariableSpec `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 }
 
@@ -135,14 +138,16 @@ func (o *schedObjects) Close() error {
 //
 // It can be passed to loadSchedObjects or ebpf.CollectionSpec.LoadAndAssign.
 type schedMaps struct {
-	Aggregates *ebpf.Map `ebpf:"aggregates"`
-	Details    *ebpf.Map `ebpf:"details"`
-	Runnable   *ebpf.Map `ebpf:"runnable"`
+	Aggregates    *ebpf.Map `ebpf:"aggregates"`
+	DetailBudgets *ebpf.Map `ebpf:"detail_budgets"`
+	Details       *ebpf.Map `ebpf:"details"`
+	Runnable      *ebpf.Map `ebpf:"runnable"`
 }
 
 func (m *schedMaps) Close() error {
 	return _SchedClose(
 		m.Aggregates,
+		m.DetailBudgets,
 		m.Details,
 		m.Runnable,
 	)
@@ -154,7 +159,6 @@ func (m *schedMaps) Close() error {
 type schedVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
-	PossibleCpus        *ebpf.Variable `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 }
 
