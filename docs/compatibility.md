@@ -20,6 +20,10 @@ builds used the control timeout for automatic writes, which was 30 seconds by
 default. Set `auto_capture.write_timeout: 30s` if preserving that deadline
 matters during an upgrade; a longer write can hold the snapshot writer lease
 longer.
+Consecutive automatic captures no longer repeat the full pre-trigger window
+after a successful publication. Trigger detection and post-window timing are
+unchanged; the selected windows may overlap by one aggregate interval to preserve
+trigger evidence.
 
 The `.bbx` container is a checksummed zstd-compressed tar with a manifest, host
 metadata, ordered JSON segments, and a completion marker. Readers bound decoded

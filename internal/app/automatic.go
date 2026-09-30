@@ -120,11 +120,7 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 		return
 	}
 	a.retrying = false
-	incident := a.controller.Begin()
-	start := uint64(0)
-	if incident.DetectedMonoNS > incident.BeforeNS {
-		start = incident.DetectedMonoNS - incident.BeforeNS
-	}
+	incident, start := a.controller.Begin()
 	h := health()
 	h.AutoCapture = nil // Live scheduling state is not part of the captured evidence.
 	c := r.SnapshotWindow(start, incident.EndMonoNS, host, h, "ebpf")

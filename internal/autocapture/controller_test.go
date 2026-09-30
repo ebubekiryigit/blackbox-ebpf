@@ -30,11 +30,11 @@ func TestFixedWindowsCoalesceAndStartConsecutiveIncidents(t *testing.T) {
 	// A later trigger is held for the next capture, even before the first
 	// capture has been selected or while its file is being written.
 	c.Observe(metric("oom", 110, 111, 2), seconds(111))
-	first := c.Begin()
+	first, firstStart := c.Begin()
 	if h := c.Health(); h.State != "writing" || h.PendingUntilNS != seconds(121) {
 		t.Fatalf("writer and waiting window status: %+v", h)
 	}
-	if first.DetectedMonoNS != seconds(100) || first.EndMonoNS != seconds(110) || len(first.Triggers) != 3 || first.Triggers[0].Count != 6 || first.Triggers[2].Count != 1 {
+	if firstStart != seconds(40) || first.DetectedMonoNS != seconds(100) || first.EndMonoNS != seconds(110) || len(first.Triggers) != 3 || first.Triggers[0].Count != 6 || first.Triggers[2].Count != 1 {
 		t.Fatalf("first incident changed: %+v", first)
 	}
 	c.Observe(metric("oom", 111, 112, 1), seconds(112))
@@ -45,14 +45,38 @@ func TestFixedWindowsCoalesceAndStartConsecutiveIncidents(t *testing.T) {
 	if end, ok := c.Deadline(); !ok || end != seconds(121) {
 		t.Fatalf("second incident missing: %d %v", end, ok)
 	}
-	second := c.Begin()
-	if second.Triggers[0].Count != 3 || second.DetectedMonoNS != seconds(111) || second.EndMonoNS != seconds(121) {
+	second, secondStart := c.Begin()
+	if secondStart != first.EndMonoNS || second.Triggers[0].Count != 3 || second.DetectedMonoNS != seconds(111) || second.EndMonoNS != seconds(121) {
 		t.Fatalf("second incident incorrect: %+v", second)
 	}
 	c.Finish("/captures/second.bbx", time.Unix(121, 0), nil)
 	c.Observe(metric("oom", 121, 122, 1), seconds(122))
 	if end, ok := c.Deadline(); !ok || end != seconds(132) || c.Health().Saved != 2 {
 		t.Fatalf("did not immediately rearm: %+v", c.Health())
+	}
+}
+
+func TestConsecutiveWindowRetainsAggregateAcrossBoundary(t *testing.T) {
+	c := New(config.Default(), model.Families)
+	c.Observe(metric("oom", 99, 100, 1), seconds(100))
+	first, _ := c.Begin()
+	c.Finish("/captures/first.bbx", time.Time{}, nil)
+	start := seconds(110) - uint64(500*time.Millisecond)
+	c.Observe(model.Metric{Family: "oom", StartMonoNS: start, EndMonoNS: seconds(111), Count: 1}, seconds(111))
+	second, selectedStart := c.Begin()
+	if selectedStart != start || second.Triggers[0].Count != 1 || first.EndMonoNS != seconds(110) {
+		t.Fatalf("boundary aggregate was lost: start=%d first=%+v second=%+v", selectedStart, first, second)
+	}
+}
+
+func TestFirstWindowIncludesTriggerIntervalLongerThanLookback(t *testing.T) {
+	cfg := config.Default()
+	cfg.AutoCapture.Before = time.Second
+	c := New(cfg, model.Families)
+	c.Observe(metric("oom", 97, 100, 1), seconds(100))
+	_, start := c.Begin()
+	if start != seconds(97) {
+		t.Fatalf("requested lookback cut through triggering aggregate: %d", start)
 	}
 }
 
@@ -94,7 +118,7 @@ func TestZeroPostWindowFailureAndUnavailableSources(t *testing.T) {
 	}
 	c.Observe(metric("block_io", 1, 2, 1), seconds(2))
 	c.Observe(metric("block_io", 2, 3, 1), seconds(3))
-	first := c.Begin()
+	first, _ := c.Begin()
 	if first.EndMonoNS != seconds(2) || first.Triggers[0].Count != 1 {
 		t.Fatal("zero-post window swallowed next trigger")
 	}
@@ -105,7 +129,10 @@ func TestZeroPostWindowFailureAndUnavailableSources(t *testing.T) {
 	if end, ok := c.Deadline(); !ok || end != seconds(3) {
 		t.Fatal("failure discarded the next incident")
 	}
-	c.Begin()
+	_, afterFailureStart := c.Begin()
+	if afterFailureStart != 0 {
+		t.Fatalf("failed publication clipped the next incident to %d", afterFailureStart)
+	}
 	c.Finish("/captures/recovered.bbx", time.Unix(3, 0), nil)
 	if c.Health().Saved != 1 || c.Health().LastError != "" {
 		t.Fatal("successful retry not reflected")
@@ -126,12 +153,12 @@ func TestBusyWriterKeepsBoundedTriggerBacklog(t *testing.T) {
 		end := start + uint64(time.Millisecond)
 		c.Observe(model.Metric{Family: family, StartMonoNS: start, EndMonoNS: end, Count: 1, Critical: 1}, end)
 	}
-	first := c.Begin()
+	first, _ := c.Begin()
 	if len(first.Triggers) != 3 {
 		t.Fatal("first window lost a trigger family")
 	}
 	c.Finish("/captures/first.bbx", time.Time{}, nil)
-	second := c.Begin()
+	second, secondStart := c.Begin()
 	c.Finish("/captures/second.bbx", time.Time{}, nil)
 	var captured uint64
 	for _, incident := range []model.AutoIncident{first, second} {
@@ -139,17 +166,17 @@ func TestBusyWriterKeepsBoundedTriggerBacklog(t *testing.T) {
 			captured += trigger.Count
 		}
 	}
-	if captured != 20000 || c.Health().Detected != captured || c.Health().Saved != 2 {
+	if secondStart != first.EndMonoNS || captured != 20000 || c.Health().Detected != captured || c.Health().Saved != 2 {
 		t.Fatalf("lost or unbounded trigger accounting: captured=%d health=%+v", captured, c.Health())
 	}
 
 	c.Observe(metric("oom", 199, 200, 1), seconds(200))
 	c.Observe(metric("oom", 210, 211, 1), seconds(211))
 	c.Observe(metric("oom", 229, 230, 1), seconds(230))
-	first = c.Begin()
+	first, _ = c.Begin()
 	c.Finish("/captures/third.bbx", time.Time{}, nil)
-	second = c.Begin()
-	if second.EndMonoNS != seconds(240) || second.AfterNS != seconds(29) || second.Triggers[0].Count != 2 || !second.Valid(second.EndMonoNS) {
+	second, secondStart = c.Begin()
+	if secondStart != first.EndMonoNS || second.EndMonoNS != seconds(240) || second.AfterNS != seconds(29) || second.Triggers[0].Count != 2 || !second.Valid(second.EndMonoNS) {
 		t.Fatalf("waiting window did not cover new triggers: %+v", second)
 	}
 }

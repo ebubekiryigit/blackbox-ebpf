@@ -12,11 +12,13 @@ import (
 // Controller is owned by the recorder loop. It keeps at most the current window
 // and one waiting window; file writes never stop trigger detection.
 type Controller struct {
-	config  config.Config
-	health  model.AutoCaptureHealth
-	current *model.AutoIncident
-	next    *model.AutoIncident
-	writing bool
+	config       config.Config
+	health       model.AutoCaptureHealth
+	current      *model.AutoIncident
+	next         *model.AutoIncident
+	writing      bool
+	writingEnd   uint64
+	lastSavedEnd uint64
 }
 
 func New(c config.Config, available []string) *Controller {
@@ -113,21 +115,40 @@ func (c *Controller) Deadline() (uint64, bool) {
 	return c.current.EndMonoNS, true
 }
 
-func (c *Controller) Begin() model.AutoIncident {
+func (c *Controller) Begin() (model.AutoIncident, uint64) {
 	v := *c.current
 	v.Triggers = append([]model.AutoTrigger(nil), v.Triggers...)
+	start := uint64(0)
+	if v.DetectedMonoNS > v.BeforeNS {
+		start = v.DetectedMonoNS - v.BeforeNS
+	}
+	if start < c.lastSavedEnd {
+		start = c.lastSavedEnd
+	}
+	// Include a complete trigger aggregate if it straddles the previous file's
+	// end. This permits only the boundary interval to overlap, not the full lookback.
+	boundary := start
+	for _, trigger := range v.Triggers {
+		if trigger.FirstIntervalStartNS < boundary && trigger.LastIntervalEndNS > boundary {
+			start = min(start, trigger.FirstIntervalStartNS)
+		}
+	}
 	c.current, c.next = c.next, nil
 	c.writing = true
-	return v
+	c.writingEnd = v.EndMonoNS
+	return v, start
 }
 
 func (c *Controller) Finish(path string, savedAt time.Time, err error) {
 	c.writing = false
 	if err != nil {
+		c.writingEnd = 0
 		c.health.Failures++
 		c.health.LastError = err.Error()
 		return
 	}
 	c.health.Saved++
+	c.lastSavedEnd = c.writingEnd
+	c.writingEnd = 0
 	c.health.LastPath, c.health.LastSavedAt, c.health.LastError = path, savedAt, ""
 }

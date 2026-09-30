@@ -132,6 +132,15 @@ func TestAutomaticCaptureThroughRecorderStorageAndReadback(t *testing.T) {
 	if err != nil || second.Manifest.AutoIncident.Triggers[0].Count != 3 {
 		t.Fatal("second incident missing", err)
 	}
+	var secondCritical uint64
+	for _, segment := range second.Segments {
+		for _, m := range segment.Metrics {
+			secondCritical += m.Critical
+		}
+	}
+	if secondCritical != 3 || second.Manifest.RequestedStartMonoNS < c.Manifest.EndMonoNS-uint64(e.Config.Resources.PollInterval) {
+		t.Fatalf("second incident lost its triggering aggregate or repeated the full lookback: critical=%d start=%d first_end=%d", secondCritical, second.Manifest.RequestedStartMonoNS, c.Manifest.EndMonoNS)
+	}
 }
 func TestManualSnapshotDuringPostWindowAndAutomaticBusyWait(t *testing.T) {
 	cfg := autoConfig(t)

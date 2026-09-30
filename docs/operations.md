@@ -102,6 +102,12 @@ For a first detection at `t1`, defaults select `[t1 - 60s, t1 + 10s]`. A trigger
 `t1 + 5s` joins that incident without moving its end. A trigger after `t1 + 10s`
 starts another incident immediately. Detection uses aggregate
 poll times, so intervals spanning a window boundary are assigned by their poll time.
+After a file is saved, the next incident's requested start is clipped to the
+previous file's end. An aggregate interval crossing that boundary is included in
+the new file so its trigger evidence is not dropped; this can overlap one interval.
+A failed publication does not advance the saved boundary, so the next incident
+can still include the failed interval if history remains retained. There is no
+cooldown and no trigger is suppressed.
 
 Waiting for the post-window does not hold a snapshot lease or pin history. Manual
 snapshots remain available. One capture may be selected/encoded at a time across

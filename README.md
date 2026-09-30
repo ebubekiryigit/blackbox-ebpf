@@ -51,6 +51,8 @@ I/O or scheduler latency, or an OOM victim.
 
 The default window covers one minute before detection and ten seconds afterward.
 Triggers within it share one file. A later trigger opens the next incident immediately.
+After a successful file, consecutive incidents do not repeat the full minute of
+history; only an aggregate interval crossing the file boundary can overlap.
 Files rotate at 1000 files or 1 GiB, whichever limit is reached first;
 manual snapshots are not rotated.
 Blackbox writes and verifies a replacement before rotating older files. A failed

@@ -89,6 +89,8 @@ or connection tracking. IRQ/current-task identity does not establish socket owne
 
 The recorder loop feeds aggregate deltas to a trigger controller. One fixed window
 groups overlapping triggers; the next trigger opens another window immediately.
+Successful consecutive files avoid repeating the full lookback while retaining
+an aggregate interval that crosses their boundary.
 At most one additional waiting window merges triggers while file output is busy.
 Snapshot selection stays on the single writer; a background worker publishes it.
 Manual and automatic snapshots share one writer lease. The private output directory

@@ -63,7 +63,7 @@ Sensors must be a YAML sequence containing one or more unique values from
 | `auto_capture.enabled` | Daemon automatic publication, enabled by default |
 | `auto_capture.directory` | Private absolute output directory; `/var/lib/blackbox/captures/auto` in native and Compose deployments |
 | `auto_capture.sensors` | Trigger sources: `block_io`, `scheduler`, `oom`; intersected with available recording sensors |
-| `auto_capture.before` / `after` | Fixed window around first detection; defaults 1 minute / 10 seconds |
+| `auto_capture.before` / `after` | Requested lookback and fixed post-window; defaults 1 minute / 10 seconds. Consecutive saved files avoid repeating the lookback. |
 | `auto_capture.max_files` | Maximum published automatic files, 1–10,000; default 1000 |
 | `auto_capture.max_storage` | Published automatic file bytes, 1 MiB–1 TiB; default 1 GiB. Staging briefly needs extra disk space. |
 | `auto_capture.write_timeout` | Deadline for writing and validating one automatic incident, 1 second–10 minutes; default 2 minutes |
