@@ -143,7 +143,8 @@ static __always_inline void task_identity(struct event *e,
   struct task_struct *leader = BPF_CORE_READ(t, group_leader);
   if (leader)
     e->process_start_ns = BPF_CORE_READ(leader, start_boottime);
-  // cgroup v2 identity; on v1/unresolvable targets this remains unknown (zero).
+  // A v1 host may expose the default hierarchy's root ID (1); analysis treats
+  // that shared root as unknown rather than a process identity.
   if (bpf_core_field_exists(((struct kernfs_node *)0)->id))
     e->cgroup_id = BPF_CORE_READ(t, cgroups, dfl_cgrp, kn, id);
 }

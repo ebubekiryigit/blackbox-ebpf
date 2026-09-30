@@ -35,6 +35,9 @@ func TestCorrelationHandlesBothTemporalOrdersAndKnownIdentity(t *testing.T) {
 		{"PID reused", []model.Event{block, model.Event{MonoNS: block.MonoNS + 1, Type: "scheduler", TGID: 17, ProcessStartNS: 101}}, false},
 		{"unknown process start", []model.Event{block, model.Event{MonoNS: block.MonoNS + 1, Type: "scheduler", TGID: 17}}, false},
 		{"cgroup only", []model.Event{{MonoNS: block.MonoNS, Type: "block_io", CgroupID: 55}, {MonoNS: block.MonoNS + 1, Type: "scheduler", CgroupID: 55}}, true},
+		{"root cgroup is not an identity", []model.Event{{MonoNS: block.MonoNS, Type: "block_io", TGID: 17, ProcessStartNS: 100, CgroupID: 1}, {MonoNS: block.MonoNS + 1, Type: "scheduler", TGID: 18, ProcessStartNS: 200, CgroupID: 1}}, false},
+		{"root cgroup is not an identity in reverse order", []model.Event{{MonoNS: block.MonoNS, Type: "scheduler", TGID: 18, ProcessStartNS: 200, CgroupID: 1}, {MonoNS: block.MonoNS + 1, Type: "block_io", TGID: 17, ProcessStartNS: 100, CgroupID: 1}}, false},
+		{"root cgroup does not hide a matching process", []model.Event{{MonoNS: block.MonoNS, Type: "block_io", TGID: 17, ProcessStartNS: 100, CgroupID: 1}, {MonoNS: block.MonoNS + 1, Type: "scheduler", TGID: 17, ProcessStartNS: 100, CgroupID: 1}}, true},
 		{"unknown identity", []model.Event{{MonoNS: block.MonoNS, Type: "block_io"}, {MonoNS: block.MonoNS + 1, Type: "scheduler"}}, false},
 		{"same signal", []model.Event{block, {MonoNS: block.MonoNS + 1, Type: "block_io", TGID: 17, ProcessStartNS: 100}}, false},
 	} {

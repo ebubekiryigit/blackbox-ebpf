@@ -30,7 +30,7 @@ func (index correlationIndex) match(e model.Event) int {
 			match = i
 		}
 	}
-	if e.CgroupID != 0 {
+	if e.CgroupID > 1 {
 		if i, ok := index.cgroup[e.CgroupID]; ok && (match < 0 || i < match) {
 			match = i
 		}
@@ -44,7 +44,7 @@ func (index correlationIndex) add(e model.Event, i int) bool {
 		index.process[correlationProcess{e.TGID, e.ProcessStartNS}] = i
 		added = true
 	}
-	if e.CgroupID != 0 {
+	if e.CgroupID > 1 {
 		index.cgroup[e.CgroupID] = i
 		added = true
 	}
@@ -58,7 +58,7 @@ func (index correlationIndex) remove(e model.Event, i int) {
 			delete(index.process, key)
 		}
 	}
-	if e.CgroupID != 0 && index.cgroup[e.CgroupID] == i {
+	if e.CgroupID > 1 && index.cgroup[e.CgroupID] == i {
 		delete(index.cgroup, e.CgroupID)
 	}
 }
