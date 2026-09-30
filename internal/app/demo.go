@@ -11,7 +11,7 @@ import (
 // Demo is deliberately synthetic and never substitutes for kernel recording.
 func Demo() model.Capture {
 	anchor := uint64(60 * time.Second)
-	host := model.Host{Hostname: "synthetic-demo", Kernel: "synthetic (no eBPF)", Architecture: "portable", BootID: "synthetic", AnchorMonoNS: anchor, AnchorWall: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+	host := model.Host{Hostname: "synthetic-demo", Kernel: "synthetic (no eBPF)", Architecture: "portable", BootID: "synthetic", ClockSource: "synthetic", AnchorMonoNS: anchor, AnchorWall: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
 	health := model.Health{}
 	for _, n := range model.Families {
 		health.Sensors = append(health.Sensors, model.SensorHealth{Name: n, State: "healthy"})

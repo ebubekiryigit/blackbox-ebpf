@@ -17,7 +17,7 @@ import (
 )
 
 func recording() model.Capture {
-	return model.Capture{Manifest: model.Manifest{FormatVersion: model.FormatVersion, StartMonoNS: seconds(40), RequestedStartMonoNS: seconds(40), EndMonoNS: seconds(110), AutoIncident: &model.AutoIncident{DetectedMonoNS: seconds(100), EndMonoNS: seconds(110), BeforeNS: seconds(60), AfterNS: seconds(10), Triggers: []model.AutoTrigger{{Family: "oom", Reason: "oom_victim", Count: 1, FirstIntervalStartNS: seconds(99), LastIntervalEndNS: seconds(100)}}}}}
+	return model.Capture{Host: model.Host{ClockSource: "boottime", AnchorMonoNS: seconds(40), AnchorWall: time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)}, Manifest: model.Manifest{FormatVersion: model.FormatVersion, StartMonoNS: seconds(40), RequestedStartMonoNS: seconds(40), EndMonoNS: seconds(110), AutoIncident: &model.AutoIncident{DetectedMonoNS: seconds(100), EndMonoNS: seconds(110), BeforeNS: seconds(60), AfterNS: seconds(10), Triggers: []model.AutoTrigger{{Family: "oom", Reason: "oom_victim", Count: 1, FirstIntervalStartNS: seconds(99), LastIntervalEndNS: seconds(100)}}}}}
 }
 func storeFor(t *testing.T) Store {
 	t.Helper()

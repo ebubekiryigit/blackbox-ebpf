@@ -15,8 +15,9 @@ func TestSnapshotIntervalBoundaryAndDelayedDelivery(t *testing.T) {
 	r.Metric(model.Metric{Family: "block_io", StartMonoNS: 10000000000, EndMonoNS: 11000000000, Count: 5}, 11000000000)
 	r.Advance(12000000000)
 	// The aggregate is stored after its interval, and a delayed event is stored
-	// after observation. Both must be filtered by their own monotonic timestamps.
-	c := r.Snapshot(1500*time.Millisecond, 12000000000, model.Host{}, r.Health(), "test")
+	// after observation. Both must be filtered by their own recorder timestamps.
+	host := model.Host{ClockSource: "boottime", AnchorMonoNS: 10000000000, AnchorWall: time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)}
+	c := r.Snapshot(1500*time.Millisecond, 12000000000, host, r.Health(), "test")
 	var b bytes.Buffer
 	if e := (capture.Container{}).Write(&b, c); e != nil {
 		t.Fatal(e)
@@ -32,6 +33,35 @@ func TestSnapshotIntervalBoundaryAndDelayedDelivery(t *testing.T) {
 	}
 	if events != 1 || metrics != 0 {
 		t.Fatalf("events=%d metrics=%d", events, metrics)
+	}
+}
+
+func TestLastWindowExcludesEventsBeforeOneHourSuspend(t *testing.T) {
+	start := uint64(100 * time.Hour)
+	r := NewWithSegmentInterval(2*time.Hour, 1<<20, time.Second, start)
+	if !r.Event(model.Event{MonoNS: start, Type: "oom", Comm: "before-suspend"}, start) {
+		t.Fatal("pre-suspend event was not retained")
+	}
+	r.Metric(model.Metric{Family: "scheduler", StartMonoNS: start, EndMonoNS: start + uint64(time.Second), Count: 1}, start+uint64(time.Second))
+	after := start + uint64(time.Hour)
+	r.Advance(after)
+	if !r.Event(model.Event{MonoNS: after, Type: "oom", Comm: "after-resume"}, after) {
+		t.Fatal("post-resume event was not retained")
+	}
+	now := after + uint64(5*time.Second)
+	c := r.Snapshot(10*time.Minute, now, model.Host{}, r.Health(), "test")
+	if want := now - uint64(10*time.Minute); c.Manifest.RequestedStartMonoNS != want {
+		t.Fatalf("--last used the wrong clock: got %d, want %d", c.Manifest.RequestedStartMonoNS, want)
+	}
+	var events []model.Event
+	for _, segment := range c.Segments {
+		events = append(events, segment.Events...)
+		if len(segment.Metrics) != 0 {
+			t.Fatal("pre-suspend aggregate entered the ten-minute window")
+		}
+	}
+	if len(events) != 1 || events[0].Comm != "after-resume" {
+		t.Fatalf("ten-minute window contains pre-suspend evidence: %+v", events)
 	}
 }
 func TestTimeAndMemoryBoundAndImmutableSnapshot(t *testing.T) {

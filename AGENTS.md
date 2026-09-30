@@ -10,6 +10,9 @@ Blackbox is a local Linux flight recorder: daemon → retroactive snapshot → `
 - Static binary, foreground daemon, private Unix socket; no runtime compiler.
 - Independent sensors aggregate normal activity in kernel and emit bounded details.
 - One writer owns recorder state. Sealed time segments are immutable.
+- Event timestamps and recorder windows use BOOTTIME; performance latency
+  durations use MONOTONIC. Sample REALTIME with BOOTTIME for current UTC
+  presentation and the latest clock-discontinuity diagnostic; do not reset history.
 - Bound kernel maps, rings, ingress, metadata and retained history; expose loss.
 - Keep domain/capture/analyzer independent of kernel access and control sockets.
 - Best-effort is default. `--strict` fails on any enabled sensor initialization or
@@ -55,7 +58,8 @@ Keep Make, Docker/Compose, systemd, README, CLI help and config examples consist
 After changing flags, defaults or Go version, run `make docs` and `make docs-check`.
 After changing Go dependencies, run `make licenses` and review the generated bundle.
 Sensor C changes also regenerate `bpf/abi.h` and embedded Go/ELF files together.
-Preserve independent capture fixtures and the documented compatibility policy.
+Keep capture fixtures and the documented pre-v1 compatibility policy aligned
+with the current BOOTTIME contract. Older development captures need no migration.
 Before a release, compare the previous tag's defaults, config, CLI, capture reader,
 socket protocol, persistence, resource use and rollback behavior with the new build.
 Document operational changes even when wire formats are unchanged, especially new

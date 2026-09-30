@@ -42,16 +42,22 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 		lines = append(lines, fmt.Sprintf("Largest retained latency: %s %s · %s PID %d.", terminal.Sensor(worst.Family), latency(worst.LatencyNS), name(e.Comm), e.PID))
 	}
 	t.Panel(&b, assessmentTone(a), a.Title, lines...)
-	start, end := r.Host.Wall(r.Manifest.StartMonoNS).UTC(), r.Host.Wall(r.Manifest.EndMonoNS).UTC()
+	start := r.Host.Wall(r.Manifest.StartMonoNS)
+	end := r.Host.Wall(r.Manifest.EndMonoNS)
 	t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s · Linux %s · %s · %s · Blackbox %s", terminal.Clean(r.Host.Hostname), terminal.Clean(r.Host.Kernel), terminal.Clean(r.Host.Architecture), terminal.Clean(r.Manifest.Mode), terminal.Clean(r.Manifest.ApplicationVersion)))
-	t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s → %s UTC · %s", start.Format("2006-01-02 15:04:05.000"), end.Format("2006-01-02 15:04:05.000"), end.Sub(start).Round(time.Millisecond)))
+	window := time.Duration(r.Manifest.EndMonoNS - r.Manifest.StartMonoNS).Round(time.Millisecond)
+	t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s → %s UTC · %s", reportTime(start), reportTime(end), window))
+	if latest := r.Manifest.Health.LastClockChange; latest != nil {
+		t.Notice(&b, terminal.Warning, "Clock changed during this daemon run", fmt.Sprintf("Latest detected %s UTC · offset change %s. UTC event times use the capture-time clock sample; times before the change may be shifted.", latest.DetectedAt.UTC().Format("2006-01-02 15:04:05"), time.Duration(latest.OffsetChangeNS)))
+	}
 	if r.Manifest.Mode == "synthetic-demo" {
 		t.Notice(&b, terminal.Info, "Synthetic demonstration", "These observations were generated; no host was recorded.")
 	}
 
 	if incident := r.Manifest.AutoIncident; incident != nil {
 		t.Section(&b, "AUTOMATIC CAPTURE")
-		t.Notice(&b, terminal.Info, "Incident detected at "+r.Host.Wall(incident.DetectedMonoNS).UTC().Format("15:04:05.000")+" UTC", "Detection uses polled aggregates, not an exact event timestamp. Related triggers are grouped in this capture.")
+		at := r.Host.Wall(incident.DetectedMonoNS)
+		t.Notice(&b, terminal.Info, "Incident detected at "+reportTime(at)+" UTC", "Detection uses polled aggregates, not an exact event timestamp. Related triggers are grouped in this capture.")
 		for _, reason := range incident.Triggers {
 			detail := fmt.Sprintf("%s: %s OOM victims", terminal.Sensor(reason.Family), terminal.Count(reason.Count))
 			if reason.Reason == "critical_latency" {
@@ -137,7 +143,8 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 			if e.PID != 0 {
 				pid = strconv.FormatUint(uint64(e.PID), 10)
 			}
-			rows = append(rows, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", r.Host.Wall(e.MonoNS).UTC().Format("15:04:05.000"), process, pid, signal, latency(e.LatencyNS), detail))
+			clockTime := r.Host.Wall(e.MonoNS).UTC().Format("15:04:05.000")
+			rows = append(rows, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", clockTime, process, pid, signal, latency(e.LatencyNS), detail))
 			tones = append(tones, tone)
 		}
 		t.Table(&b, "Time\tProcess\tPID\tSignal\tLatency\tDetail", rows, tones)
@@ -320,11 +327,15 @@ func diagnostics(w io.Writer, r Report, t terminal.Theme) {
 	}
 	h := r.Manifest.Health
 	t.Table(w, "Recorder counter\tLifetime total", []string{
-		fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Memory history evictions\t%d", h.EvictedSegments), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures),
+		fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Memory history evictions\t%d", h.EvictedSegments), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures), fmt.Sprintf("Clock discontinuities\t%d", h.ClockChanges),
 	}, nil)
 	if h.MetadataFailures > 0 {
 		t.Line(w, terminal.Muted, "  ", "Unresolved process metadata does not discard the kernel observation.")
 	}
+}
+
+func reportTime(at time.Time) string {
+	return at.UTC().Format("2006-01-02 15:04:05.000")
 }
 
 func severityTone(s string) terminal.Tone {

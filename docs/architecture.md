@@ -22,7 +22,7 @@ Unix socket snapshot → streamed .bbx file → offline analyzer
 | `bpf/` | Raw tracepoint programs, CO-RE field access, aggregation and detail quotas |
 | `internal/sensor` | Embedded object loading, attachment, ring decoding, aggregate polling and health |
 | `internal/autocapture` | Deterministic incident state, bounded trigger metadata, private rotating publication |
-| `internal/app` | One state-owning event loop, monotonic clock, process enrichment and failure policy |
+| `internal/app` | One state-owning event loop, clock sampling, process enrichment and failure policy |
 | `internal/recorder` | Time/memory retention, sealed segments and immutable snapshot selection |
 | `internal/control` | Private versioned Unix socket requests and capture streaming |
 | `internal/capture` | Versioned container, integrity validation and atomic file publication |
@@ -36,6 +36,25 @@ The recorder has one writer. Sealed segment contents never change, so snapshots
 can share them while the writer continues. Active and boundary segments are
 copied. Segment timestamp bounds avoid scanning every retained event on snapshot;
 partial aggregate intervals are excluded rather than interpolated.
+
+## Timekeeping
+
+Kernel event timestamps and recorder windows use `CLOCK_BOOTTIME`. Block I/O and
+scheduler latency durations use `CLOCK_MONOTONIC`, so Linux suspend time does
+not inflate those performance measurements. The daemon samples
+`CLOCK_REALTIME` with `CLOCK_BOOTTIME` on its existing poll and query paths.
+Current UTC in status comes from a fresh realtime sample, never from an
+extrapolated startup timestamp.
+
+A significant change in `CLOCK_REALTIME - CLOCK_BOOTTIME` is logged and
+exposed as the latest daemon-lifetime clock discontinuity in status, captures,
+and reports. Recording and history continue unchanged. Each capture uses a
+current paired realtime/boottime sample to present its event times in UTC.
+This is a projection, not historical clock repair: event UTC times before a
+clock step can be shifted. `--last` and retention use BOOTTIME directly, so a
+one-hour Linux suspend excludes pre-suspend events from a ten-minute window.
+A virtual-machine pause that stops the guest's BOOTTIME clock is different:
+that elapsed host time cannot be inferred from the guest clock alone.
 
 ## Sensors and coverage
 

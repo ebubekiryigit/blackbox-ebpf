@@ -46,7 +46,9 @@ func autoEngine(t *testing.T, c config.Config, logOutput ...io.Writer) (*Engine,
 	if len(logOutput) > 0 {
 		output = logOutput[0]
 	}
-	e := &Engine{Config: c, sensors: []sensor.Sensor{s}, ingress: make(chan model.Event, 8), Queries: make(chan Query, 8), stopped: make(chan struct{}), clock: func() (uint64, error) { return uint64(100*time.Second + time.Since(epoch)), nil }, logger: slog.New(slog.NewTextHandler(output, nil))}
+	e := &Engine{Config: c, sensors: []sensor.Sensor{s}, host: model.Host{ClockSource: "boottime", AnchorMonoNS: uint64(100 * time.Second), AnchorWall: epoch.UTC()}, ingress: make(chan model.Event, 8), Queries: make(chan Query, 8), stopped: make(chan struct{}), clock: func() (uint64, error) { return uint64(100*time.Second + time.Since(epoch)), nil }, sampleClock: func() (clockSample, error) {
+		return clockSample{uint64(100*time.Second + time.Since(epoch)), time.Now().UTC()}, nil
+	}, logger: slog.New(slog.NewTextHandler(output, nil))}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	done := make(chan error, 1)
 	go func() { done <- e.Run(ctx) }()
@@ -385,7 +387,7 @@ func TestAutomaticSelectionHoldsManualSnapshotLease(t *testing.T) {
 	if !ok {
 		t.Fatal("incident was not scheduled")
 	}
-	a.progress(end, end, r, func() model.Health { return model.Health{} })
+	a.progress(end, end, r, func() model.Health { return model.Health{} }, model.Host{})
 	if len(a.jobs) != 1 || !e.snapshotBusy.Load() {
 		t.Fatal("automatic selection did not reserve snapshot writer")
 	}
@@ -398,25 +400,49 @@ func TestAutomaticSelectionHoldsManualSnapshotLease(t *testing.T) {
 		t.Fatal("automatic writer leaked snapshot lease")
 	}
 }
+
+func TestAutomaticSelectionKeepsCurrentClockSampleAndDiagnostic(t *testing.T) {
+	cfg := autoConfig(t)
+	e := &Engine{Config: cfg}
+	a := &automatic{controller: autocapture.New(cfg, model.Families), engine: e, timer: time.NewTimer(time.Hour), jobs: make(chan autoJob, 1)}
+	defer a.timer.Stop()
+	r := recorder.New(cfg.History, cfg.MaxMemory, uint64(time.Second))
+	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
+	end, ok := a.controller.Deadline()
+	if !ok {
+		t.Fatal("automatic incident was not scheduled")
+	}
+	base := time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)
+	host := model.Host{ClockSource: "boottime", AnchorMonoNS: uint64(2 * time.Second), AnchorWall: base.Add(14 * time.Hour)}
+	a.progress(end, end, r, func() model.Health {
+		return model.Health{ClockChanges: 1, LastClockChange: &model.ClockDiscontinuity{DetectedBootNS: uint64(2 * time.Second), DetectedAt: host.AnchorWall, OffsetChangeNS: int64(14 * time.Hour)}}
+	}, host)
+	job := <-a.jobs
+	defer job.release()
+	if job.capture.Manifest.Health.ClockChanges != 1 || job.capture.Manifest.Health.LastClockChange == nil || job.capture.Host != host {
+		t.Fatalf("automatic capture lost current clock metadata: %+v", job.capture)
+	}
+}
 func TestAutomaticWaitsForWriterAndPendingShutdown(t *testing.T) {
 	cfg := autoConfig(t)
 	cfg.Control.Timeout = time.Second
 	e := &Engine{Config: cfg}
 	a := newAutomatic(context.Background(), e, model.Families)
 	r := recorder.New(cfg.History, cfg.MaxMemory, uint64(time.Second))
+	host := model.Host{ClockSource: "boottime", AnchorMonoNS: uint64(time.Second), AnchorWall: time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)}
 	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
 	end, _ := a.controller.Deadline()
 	release, _ := e.beginSnapshot()
-	a.progress(end, end, r, func() model.Health { return model.Health{} })
+	a.progress(end, end, r, func() model.Health { return model.Health{} }, host)
 	if a.controller.Health().State != "pending" {
 		t.Fatal("busy writer discarded pending metadata")
 	}
-	a.progress(end+uint64(time.Second), end+uint64(time.Second), r, func() model.Health { return model.Health{} })
+	a.progress(end+uint64(time.Second), end+uint64(time.Second), r, func() model.Health { return model.Health{} }, host)
 	if a.controller.Health().Failures != 0 || a.controller.Health().State != "pending" {
 		t.Fatal("writer contention discarded incident")
 	}
 	release()
-	a.progress(end+uint64(time.Second), end+uint64(time.Second), r, func() model.Health { return model.Health{} })
+	a.progress(end+uint64(time.Second), end+uint64(time.Second), r, func() model.Health { return model.Health{} }, host)
 	select {
 	case result := <-a.completed():
 		a.finish(result)

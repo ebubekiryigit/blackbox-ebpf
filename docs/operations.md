@@ -216,6 +216,15 @@ for fixed internal budgets, public settings, and precedence. An unset `snapshot 
 daemon's configured history. An explicit `--last` cannot exceed that history;
 shorter retained coverage is reported.
 
+`--last` and retention use Linux BOOTTIME rather than UTC. A one-hour Linux
+suspend advances BOOTTIME, so pre-suspend events fall outside `--last 10m`.
+A virtual-machine pause may also stop the guest's BOOTTIME clock; elapsed host
+time during such a pause cannot be inferred from guest timestamps. `status`
+shows the latest detected change in the local realtime-to-boottime offset.
+Captures and reports retain that diagnostic and use a capture-time clock
+sample for UTC presentation. Earlier event UTC times may be shifted after a
+clock step; the daemon continues recording without clearing history.
+
 ## Reading a report
 
 ```sh

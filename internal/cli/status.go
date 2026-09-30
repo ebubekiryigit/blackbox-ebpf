@@ -17,7 +17,7 @@ func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) e
 	for _, s := range h.Sensors {
 		notes = notes || s.Loss != (model.Counters{})
 	}
-	notes = notes || h.IngressDrops+h.RecorderDrops+h.MetadataFailures+h.SnapshotFailures > 0
+	notes = notes || h.IngressDrops+h.RecorderDrops+h.MetadataFailures+h.SnapshotFailures+h.ClockChanges > 0
 	tone, title := terminal.Good, "RECORDER ACTIVE"
 	if active < enabled || notes {
 		tone, title = terminal.Warning, "RECORDER ACTIVE · COLLECTION NOTES"
@@ -69,6 +69,20 @@ func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) e
 		}
 		if a.LastError != "" {
 			t.Line(&b, terminal.Warning, "    ", "Last failure: "+a.LastError)
+		}
+	}
+	if h.ClockChanges > 0 {
+		t.Section(&b, "CLOCK")
+		label := "wall-clock discontinuities"
+		if h.ClockChanges == 1 {
+			label = "wall-clock discontinuity"
+		}
+		t.Notice(&b, terminal.Warning, fmt.Sprintf("%d %s detected", h.ClockChanges, label), "Recording continued. Capture UTC timestamps use a current clock sample; older timestamps may be shifted.")
+		if step := h.LastClockChange; step != nil {
+			t.Line(&b, terminal.Muted, "    ", fmt.Sprintf("Last detected %s UTC · offset change %s", step.DetectedAt.UTC().Format("2006-01-02 15:04:05"), time.Duration(step.OffsetChangeNS)))
+		}
+		if h.ObservedAt != nil {
+			t.Line(&b, terminal.Muted, "    ", "Current UTC (realtime): "+h.ObservedAt.UTC().Format("2006-01-02 15:04:05"))
 		}
 	}
 	if notes {

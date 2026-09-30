@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -16,7 +17,22 @@ import (
 )
 
 func sample() model.Capture {
-	return model.Capture{Manifest: model.Manifest{FormatVersion: 1, StartMonoNS: 10, EndMonoNS: 20, Mode: "test"}, Host: model.Host{Hostname: "test"}, Segments: []model.Segment{{StartMonoNS: 10, EndMonoNS: 20, Events: []model.Event{{MonoNS: 15, Type: "oom", PID: 42}}}}}
+	return model.Capture{Manifest: model.Manifest{FormatVersion: model.FormatVersion, StartMonoNS: 10, EndMonoNS: 20, Mode: "test"}, Host: model.Host{Hostname: "test", ClockSource: "boottime", AnchorMonoNS: 10, AnchorWall: time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)}, Segments: []model.Segment{{StartMonoNS: 10, EndMonoNS: 20, Events: []model.Event{{MonoNS: 15, Type: "oom", PID: 42}}}}}
+}
+
+func TestClockDiscontinuityRoundTrip(t *testing.T) {
+	c := sample()
+	at := c.Host.AnchorWall.Add(time.Second)
+	c.Manifest.Health.ClockChanges = 1
+	c.Manifest.Health.LastClockChange = &model.ClockDiscontinuity{DetectedBootNS: 16, DetectedAt: at, OffsetChangeNS: int64(14 * time.Hour)}
+	var b bytes.Buffer
+	if err := (Container{}).Write(&b, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (Container{}).Read(&b)
+	if err != nil || !reflect.DeepEqual(got.Manifest.Health.LastClockChange, c.Manifest.Health.LastClockChange) || got.Host != c.Host {
+		t.Fatalf("clock metadata changed on disk: err=%v capture=%+v", err, got)
+	}
 }
 func TestRoundTripPrivatePublicationNoOverwrite(t *testing.T) {
 	c := sample()

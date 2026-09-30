@@ -44,6 +44,7 @@ type Engine struct {
 	closeMu          sync.Mutex
 	closedSensors    map[string]bool
 	clock            func() (uint64, error)
+	sampleClock      func() (clockSample, error)
 	stopped          chan struct{}
 }
 
@@ -69,7 +70,7 @@ func NewWithLogger(c config.Config, logger *slog.Logger) (*Engine, error) {
 	for _, s := range missing {
 		logger.Warn("sensor coverage", "sensor", s.Name, "state", s.State, "reason", s.Reason)
 	}
-	return &Engine{Config: c, logger: logger, sensors: ss, unavailable: missing, host: h, ingress: make(chan model.Event, c.Resources.IngressEvents), Queries: make(chan Query, c.Resources.QueryQueue), clock: Mono, stopped: make(chan struct{})}, nil
+	return &Engine{Config: c, logger: logger, sensors: ss, unavailable: missing, host: h, ingress: make(chan model.Event, c.Resources.IngressEvents), Queries: make(chan Query, c.Resources.QueryQueue), clock: Boot, sampleClock: sampleClocks, stopped: make(chan struct{})}, nil
 }
 func (e *Engine) Close() {
 	for _, s := range e.sensors {
@@ -133,9 +134,31 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	}
 	clock := e.clock
 	if clock == nil {
-		clock = Mono
+		clock = Boot
 	}
-	now, err := clock()
+	tracker := newClockTracker(e.host)
+	sampleClock := e.sampleClock
+	if sampleClock == nil {
+		sampleClock = sampleClocks
+	}
+	observeClock := func() (uint64, error) {
+		if e.host.ClockSource != "boottime" {
+			return clock() // Synthetic tests do not use a live kernel clock.
+		}
+		sample, err := sampleClock()
+		if err != nil {
+			return 0, err
+		}
+		step, err := tracker.observe(sample)
+		if err != nil {
+			return 0, err
+		}
+		if step != nil {
+			logger.Warn("wall clock discontinuity; recording continues", "at", step.DetectedAt, "offset_change", time.Duration(step.OffsetChangeNS), "detected_boot_ns", step.DetectedBootNS)
+		}
+		return sample.bootNS, nil
+	}
+	now, err := observeClock()
 	if err != nil {
 		return err
 	}
@@ -186,6 +209,12 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	disabled := map[string]bool{}
 	health := func() model.Health {
 		h := r.Health()
+		if e.host.ClockSource == "boottime" {
+			at := tracker.last.wall
+			h.ObservedAt = &at
+			h.ClockChanges = tracker.changes
+			h.LastClockChange = tracker.latest
+		}
 		if auto != nil {
 			h.AutoCapture = auto.controller.Health()
 			if until := h.AutoCapture.PendingUntilNS; until > now {
@@ -271,14 +300,18 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 		case <-ctx.Done():
 			return nil
 		case result := <-auto.completed():
-			now, err = clock()
+			now, err = observeClock()
 			if err != nil {
 				return err
 			}
 			auto.finish(result)
 		case <-auto.tick():
+			now, err = observeClock()
+			if err != nil {
+				return err
+			}
 			if auto.retryTick() {
-				now, err = clock()
+				// The retry timer only waits for the snapshot writer lease.
 			} else {
 				err = drain()
 				if err == nil {
@@ -300,7 +333,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			}
 			continue // Detail hot path does not poll automatic state or allocate health.
 		case <-timer.C:
-			now, err = clock()
+			now, err = observeClock()
 			if err != nil {
 				return err
 			}
@@ -312,7 +345,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			if q.ctx.Err() != nil {
 				continue
 			}
-			now, err = clock()
+			now, err = observeClock()
 			if err != nil {
 				return err
 			}
@@ -342,12 +375,12 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 				result.ReleaseSnapshot = release
 				captureHealth := h
 				captureHealth.AutoCapture = nil
-				result.Capture = r.Snapshot(q.Last, now, e.host, captureHealth, "ebpf")
+				result.Capture = r.Snapshot(q.Last, now, tracker.host, captureHealth, "ebpf")
 				result.Capture.Manifest.Settings = e.Settings()
 			}
 			reply(q, result)
 		}
-		auto.progress(now, previous, r, health)
+		auto.progress(now, previous, r, health, tracker.host)
 	}
 }
 

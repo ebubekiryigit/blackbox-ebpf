@@ -1,7 +1,10 @@
 // Package model is the durable boundary shared by recording and offline analysis.
 package model
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 var Families = []string{"block_io", "scheduler", "tcp", "oom"}
 
@@ -16,6 +19,8 @@ func (h Histogram) Count() (n uint64) {
 }
 
 type Event struct {
+	// MonoNS is a CLOCK_BOOTTIME timestamp. The field name is retained in the
+	// pre-v1 archive and sensor wire contract.
 	MonoNS          uint64 `json:"mono_ns"`
 	Type            string `json:"type"`
 	PID             uint32 `json:"pid,omitempty"`
@@ -78,28 +83,50 @@ type SensorHealth struct {
 	Loss                   Counters `json:"loss"`
 }
 type Health struct {
-	AutoCapture      *AutoCaptureHealth `json:"auto_capture,omitempty"`
-	Sensors          []SensorHealth     `json:"sensors"`
-	IngressDrops     uint64             `json:"ingress_drops"`
-	RecorderDrops    uint64             `json:"recorder_drops"`
-	EvictedSegments  uint64             `json:"memory_evicted_segments"`
-	MetadataFailures uint64             `json:"metadata_resolution_failures"`
-	SnapshotFailures uint64             `json:"snapshot_write_failures"`
-	RetainedBytes    int64              `json:"retained_bytes"`
-	MaxBytes         int64              `json:"max_bytes"`
-	RetainedFromNS   uint64             `json:"retained_from_ns"`
+	AutoCapture      *AutoCaptureHealth  `json:"auto_capture,omitempty"`
+	ObservedAt       *time.Time          `json:"observed_at,omitempty"`
+	ClockChanges     uint64              `json:"clock_discontinuities,omitempty"`
+	LastClockChange  *ClockDiscontinuity `json:"last_clock_discontinuity,omitempty"`
+	Sensors          []SensorHealth      `json:"sensors"`
+	IngressDrops     uint64              `json:"ingress_drops"`
+	RecorderDrops    uint64              `json:"recorder_drops"`
+	EvictedSegments  uint64              `json:"memory_evicted_segments"`
+	MetadataFailures uint64              `json:"metadata_resolution_failures"`
+	SnapshotFailures uint64              `json:"snapshot_write_failures"`
+	RetainedBytes    int64               `json:"retained_bytes"`
+	MaxBytes         int64               `json:"max_bytes"`
+	RetainedFromNS   uint64              `json:"retained_from_ns"`
+}
+
+// ClockDiscontinuity records the latest detected change in the local
+// REALTIME - BOOTTIME offset. It does not repair historical wall timestamps.
+type ClockDiscontinuity struct {
+	DetectedBootNS uint64    `json:"detected_boot_ns"`
+	DetectedAt     time.Time `json:"detected_at"`
+	OffsetChangeNS int64     `json:"offset_change_ns"`
 }
 type Host struct {
 	Hostname     string    `json:"hostname"`
 	Kernel       string    `json:"kernel"`
 	Architecture string    `json:"architecture"`
 	BootID       string    `json:"boot_id"`
+	ClockSource  string    `json:"clock_source,omitempty"`
 	AnchorMonoNS uint64    `json:"anchor_mono_ns"`
 	AnchorWall   time.Time `json:"anchor_wall"`
 }
 
 func (h Host) Wall(ns uint64) time.Time {
 	return h.AnchorWall.Add(time.Duration(int64(ns) - int64(h.AnchorMonoNS)))
+}
+
+func (h Host) ValidateClock() error {
+	if h.ClockSource != "" && h.ClockSource != "boottime" && h.ClockSource != "synthetic" {
+		return fmt.Errorf("unsupported capture clock source %q", h.ClockSource)
+	}
+	if h.AnchorWall.IsZero() {
+		return fmt.Errorf("capture clock anchor is missing")
+	}
+	return nil
 }
 
 type RecordingSettings struct {

@@ -96,7 +96,7 @@ func stringCost(e model.Event) int64 {
 }
 func (r *Recorder) Event(e model.Event, now uint64) bool {
 	r.Advance(now)
-	// Delayed sensor delivery keeps the original monotonic event timestamp.
+	// Delayed sensor delivery keeps the original canonical event timestamp.
 	if e.MonoNS > now || now-e.MonoNS > r.history {
 		r.drops++
 		return false

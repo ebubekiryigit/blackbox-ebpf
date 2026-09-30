@@ -94,7 +94,7 @@ func (a *automatic) finish(result autoResult) {
 		a.engine.logger.Info("automatic capture saved", "path", result.path)
 	}
 }
-func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, health func() model.Health) {
+func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, health func() model.Health, host model.Host) {
 	if a == nil {
 		return
 	}
@@ -127,7 +127,7 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 	}
 	h := health()
 	h.AutoCapture = nil // Live scheduling state is not part of the captured evidence.
-	c := r.SnapshotWindow(start, incident.EndMonoNS, a.engine.host, h, "ebpf")
+	c := r.SnapshotWindow(start, incident.EndMonoNS, host, h, "ebpf")
 	c.Manifest.Settings = a.engine.Settings()
 	c.Manifest.AutoIncident = &incident
 	a.jobs <- autoJob{c, release}

@@ -16,6 +16,7 @@ import (
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/capture"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/control"
+	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 )
 
 func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
@@ -129,6 +130,12 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 	if status.Health == nil || len(status.Health.Sensors) != 4 {
 		t.Fatal("missing sensor status")
 	}
+	if status.Health.ObservedAt == nil {
+		t.Fatalf("status did not report a current realtime sample: %+v", status.Health.ObservedAt)
+	}
+	if delta := time.Since(*status.Health.ObservedAt); delta < -10*time.Second || delta > 10*time.Second {
+		t.Fatalf("status realtime sample is stale: delta=%s", delta)
+	}
 	var encoded bytes.Buffer
 	if _, err = control.Call(ctx, cfg.Socket, control.Request{Operation: "snapshot", LastNS: int64(10 * time.Second)}, &encoded); err != nil {
 		t.Fatal(err)
@@ -136,6 +143,12 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 	recorded, err := (capture.Container{}).Read(&encoded)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if recorded.Manifest.FormatVersion != model.FormatVersion || recorded.Host.ClockSource != "boottime" {
+		t.Fatalf("live capture did not declare its boottime clock: format=%d source=%q", recorded.Manifest.FormatVersion, recorded.Host.ClockSource)
+	}
+	if delta := time.Since(recorded.Host.Wall(recorded.Manifest.EndMonoNS)); delta < -10*time.Second || delta > 10*time.Second {
+		t.Fatalf("snapshot end was not mapped to current realtime: delta=%s", delta)
 	}
 	if recorded.Manifest.Settings.PollIntervalNS != uint64(cfg.Resources.PollInterval) || recorded.Manifest.Settings.RingBytes != cfg.Resources.RingBytes || recorded.Manifest.Settings.BlockCriticalNS != uint64(cfg.BlockCritical) || recorded.Manifest.Settings.SchedulerCriticalNS != uint64(cfg.SchedulerCritical) {
 		t.Fatal("effective recorder settings were not persisted")

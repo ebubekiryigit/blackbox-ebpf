@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Use BOOTTIME for kernel event timestamps and recorder windows while retaining
+  MONOTONIC for block I/O and scheduler latency durations.
+- Detect significant local realtime-to-boottime offset changes without stopping
+  recording. Show the latest change in status, captures, and reports; use a
+  current clock sample for UTC presentation without historical clock repair.
+- Keep the pre-v1 `.bbx` format number at 1. Earlier development captures with
+  different clock semantics are not guaranteed compatible.
+
 ## 0.2.0 - 2026-09-25
 
 - Automatic incident capture with selected critical latency/OOM aggregate triggers,

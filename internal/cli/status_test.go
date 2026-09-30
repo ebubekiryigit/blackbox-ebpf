@@ -88,6 +88,20 @@ func TestStatusIncludesAutomaticCaptureHealth(t *testing.T) {
 	}
 }
 
+func TestStatusShowsClockDiscontinuityAndCurrentRealtime(t *testing.T) {
+	now := time.Date(2026, 9, 28, 7, 4, 7, 0, time.UTC)
+	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, ObservedAt: &now, ClockChanges: 1, LastClockChange: &model.ClockDiscontinuity{DetectedBootNS: 200, DetectedAt: now.Add(-time.Minute), OffsetChangeNS: int64(14 * time.Hour)}}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"COLLECTION NOTES", "CLOCK", "1 wall-clock discontinuity detected", "offset change 14h0m0s", "Current UTC (realtime): 2026-09-28 07:04:07"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status omitted %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestStatusShowsPartialCoverageAndLifetimeCounters(t *testing.T) {
 	h := model.Health{
 		Sensors: []model.SensorHealth{

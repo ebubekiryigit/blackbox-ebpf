@@ -74,6 +74,13 @@ func assess(r Report) Assessment {
 		}
 	}
 	add := func(n CoverageReason) { a.Reasons = append(a.Reasons, n) }
+	if changes := r.Manifest.Health.ClockChanges; changes > 0 {
+		explanation := "This daemon-lifetime count does not imply missing observations. UTC timestamps are projected using the capture-time clock sample; timestamps preceding a clock step may be shifted."
+		if latest := r.Manifest.Health.LastClockChange; latest != nil {
+			explanation += fmt.Sprintf(" Latest: %s UTC, offset change %s.", latest.DetectedAt.UTC().Format(time.RFC3339), time.Duration(latest.OffsetChangeNS))
+		}
+		a.Diagnostics = append(a.Diagnostics, CoverageReason{Code: "clock_discontinuities", Severity: "warning", Scope: "lifetime", Count: changes, Title: "Wall-clock discontinuities detected", Explanation: explanation})
+	}
 	for i, s := range r.Signals {
 		if s.State == "disabled" {
 			continue

@@ -45,8 +45,7 @@ int switch_task(struct bpf_raw_tracepoint_args *ctx) {
   __u64 *start = bpf_map_lookup_elem(&runnable, &pid);
   if (!start)
     return 0;
-  __u64 now = bpf_ktime_get_ns();
-  __u64 latency = now - *start;
+  __u64 latency = bpf_ktime_get_ns() - *start;
   struct stats *s = get_stats();
   if (s) {
     histogram(s, latency);
@@ -54,7 +53,7 @@ int switch_task(struct bpf_raw_tracepoint_args *ctx) {
       __sync_fetch_and_add(&s->anomalies, 1);
       if (latency >= critical_threshold_ns)
         __sync_fetch_and_add(&s->critical, 1);
-      struct event *e = reserve(s, 2, now, 1);
+      struct event *e = reserve(s, 2, bpf_ktime_get_boot_ns(), 1);
       if (e) {
         task_identity(e, next);
         e->latency_ns = latency;

@@ -77,14 +77,14 @@ int complete(struct bpf_raw_tracepoint_args *ctx) {
     __sync_fetch_and_add(&s->unmatched, 1);
     return 0;
   }
-  __u64 now = bpf_ktime_get_ns();
-  __u64 latency = now - v->start;
+  __u64 latency = bpf_ktime_get_ns() - v->start;
   histogram(s, latency);
   __sync_fetch_and_add(&s->bytes, v->identity.bytes);
   if (latency >= threshold_ns) {
     __sync_fetch_and_add(&s->anomalies, 1);
     if (latency >= critical_threshold_ns)
       __sync_fetch_and_add(&s->critical, 1);
+    __u64 now = bpf_ktime_get_boot_ns();
     struct event *e = reserve(s, 1, now, 1);
     if (e) {
       *e = v->identity;

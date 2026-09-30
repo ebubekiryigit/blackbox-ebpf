@@ -19,13 +19,12 @@ import (
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 )
 
-// Raw fixtures deliberately bypass the current writer. Old fields and producer
-// versions must keep their meaning even as new optional fields are added.
-func legacyArchive(t *testing.T, names []string) []byte {
-	return legacyArchiveWithOverrides(t, names, nil)
+// Raw fixtures bypass the writer to exercise archive integrity and streaming decode.
+func fixtureArchive(t *testing.T, names []string) []byte {
+	return fixtureArchiveWithOverrides(t, names, nil)
 }
 
-func legacyArchiveWithOverrides(t *testing.T, names []string, overrides map[string][]byte) []byte {
+func fixtureArchiveWithOverrides(t *testing.T, names []string, overrides map[string][]byte) []byte {
 	t.Helper()
 	var b bytes.Buffer
 	z, err := zstd.NewWriter(&b, zstd.WithEncoderConcurrency(1))
@@ -69,7 +68,7 @@ func TestLargeFormatOneSegmentStreamsWithoutChangingDecodedEvidence(t *testing.T
 	}
 	segment.WriteString(`],"metrics":[]}`)
 	const name = "segments/00000000.json"
-	archive := legacyArchiveWithOverrides(t, []string{"manifest.json", "host.json", name, "complete.json"}, map[string][]byte{name: []byte(segment.String())})
+	archive := fixtureArchiveWithOverrides(t, []string{"manifest.json", "host.json", name, "complete.json"}, map[string][]byte{name: []byte(segment.String())})
 	got, err := (Container{}).Read(bytes.NewReader(archive))
 	if err != nil {
 		t.Fatal(err)
@@ -92,19 +91,19 @@ func TestFormatOneEntriesRequireOneCompleteJSONValue(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, suffix := range []string{" true", " !"} {
-				archive := legacyArchiveWithOverrides(t, names, map[string][]byte{name: append(bytes.Clone(body), suffix...)})
+				archive := fixtureArchiveWithOverrides(t, names, map[string][]byte{name: append(bytes.Clone(body), suffix...)})
 				if _, err := (Container{}).Read(bytes.NewReader(archive)); err == nil {
 					t.Fatalf("accepted trailing data in %s: %q", name, suffix)
 				}
 			}
 			trimmed := bytes.TrimSpace(body)
-			archive := legacyArchiveWithOverrides(t, names, map[string][]byte{name: trimmed[:len(trimmed)-1]})
+			archive := fixtureArchiveWithOverrides(t, names, map[string][]byte{name: trimmed[:len(trimmed)-1]})
 			if _, err := (Container{}).Read(bytes.NewReader(archive)); err == nil {
 				t.Fatalf("accepted truncated JSON in %s", name)
 			}
 		})
 	}
-	archive := legacyArchiveWithOverrides(t, names, map[string][]byte{"segments/00000000.json": []byte(`{"start_mono_ns":10,"end_mono_ns":20,"events":[],"metrics":[]}   `)})
+	archive := fixtureArchiveWithOverrides(t, names, map[string][]byte{"segments/00000000.json": []byte(`{"start_mono_ns":10,"end_mono_ns":20,"events":[],"metrics":[]}   `)})
 	if _, err := (Container{}).Read(bytes.NewReader(archive)); err != nil {
 		t.Fatal("rejected a single value followed by whitespace", err)
 	}
@@ -112,34 +111,35 @@ func TestFormatOneEntriesRequireOneCompleteJSONValue(t *testing.T) {
 
 func TestReaderRejectsOversizedFormatOneArchive(t *testing.T) {
 	segment := []byte(`{"start_mono_ns":10,"end_mono_ns":20,"future":"` + strings.Repeat("x", 2<<20) + `"}`)
-	archive := legacyArchiveWithOverrides(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"}, map[string][]byte{"segments/00000000.json": segment})
+	archive := fixtureArchiveWithOverrides(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"}, map[string][]byte{"segments/00000000.json": segment})
 	limits := config.Default().Capture
 	limits.MaxDecodedBytes = config.MinMemory
 	if _, err := (Container{Limits: limits}).Read(bytes.NewReader(archive)); err == nil {
 		t.Fatal("accepted archive above decoded-byte budget")
 	}
 }
-func TestLegacyV1FixtureAndAdditiveFields(t *testing.T) {
-	b := legacyArchive(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"})
+func TestIndependentArchiveFixtureAndAdditiveFields(t *testing.T) {
+	b := fixtureArchive(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"})
 	c, err := (Container{}).Read(bytes.NewReader(b))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Manifest.ApplicationVersion != "0.1.0-legacy-fixture" || c.Manifest.RecordingStartMonoNS != 0 || c.Manifest.Settings.PollIntervalNS != 0 {
-		t.Fatal("legacy capture was reinterpreted")
+		t.Fatal("archive fixture was reinterpreted")
 	}
 	e := c.Segments[0].Events[0]
 	if e.TCPDirection != "" || e.EndpointSource != "" || e.SocketContext != "" || e.SourceIP != "127.0.0.1" {
 		t.Fatal("legacy reset direction/provenance invented")
 	}
 }
+
 func TestCaptureOrderAndIndependentLimits(t *testing.T) {
 	for _, names := range [][]string{
 		{"host.json", "manifest.json", "segments/00000000.json", "complete.json"},
 		{"manifest.json", "segments/00000000.json", "host.json", "complete.json"},
 		{"manifest.json", "host.json", "complete.json", "segments/00000000.json"},
 	} {
-		if _, err := (Container{}).Read(bytes.NewReader(legacyArchive(t, names))); err == nil {
+		if _, err := (Container{}).Read(bytes.NewReader(fixtureArchive(t, names))); err == nil {
 			t.Fatal("invalid entry order accepted")
 		}
 	}
@@ -149,7 +149,7 @@ func TestCaptureOrderAndIndependentLimits(t *testing.T) {
 	if err := (Container{Limits: limits}).Write(&bytes.Buffer{}, c); err == nil {
 		t.Fatal("writer ignored entry budget")
 	}
-	b := legacyArchive(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"})
+	b := fixtureArchive(t, []string{"manifest.json", "host.json", "segments/00000000.json", "complete.json"})
 	if _, err := (Container{Limits: limits}).Read(bytes.NewReader(b)); err == nil {
 		t.Fatal("reader ignored entry budget")
 	}

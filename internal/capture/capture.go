@@ -48,6 +48,9 @@ func (container Container) Write(dst io.Writer, c model.Capture) error {
 	if c.Manifest.FormatVersion != model.FormatVersion {
 		return fmt.Errorf("writer requires capture format %d, got %d", model.FormatVersion, c.Manifest.FormatVersion)
 	}
+	if err := c.Host.ValidateClock(); err != nil {
+		return err
+	}
 	if len(c.Segments) > limits.MaxEntries-3 {
 		return fmt.Errorf("too many capture entries")
 	}
@@ -187,6 +190,9 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 		return c, fmt.Errorf("capture missing manifest or host")
 	}
 	if err = model.CheckReadableFormat(c.Manifest.FormatVersion); err != nil {
+		return c, err
+	}
+	if err = c.Host.ValidateClock(); err != nil {
 		return c, err
 	}
 	if c.Manifest.EndMonoNS < c.Manifest.StartMonoNS || c.Manifest.RequestedStartMonoNS > c.Manifest.StartMonoNS || c.Manifest.RecordingStartMonoNS > c.Manifest.StartMonoNS {
