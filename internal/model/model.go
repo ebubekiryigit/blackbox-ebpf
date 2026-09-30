@@ -24,6 +24,7 @@ type Event struct {
 	MonoNS          uint64 `json:"mono_ns"`
 	Type            string `json:"type"`
 	PID             uint32 `json:"pid,omitempty"`
+	PIDOnly         bool   `json:"pid_only,omitempty"`
 	TGID            uint32 `json:"tgid,omitempty"`
 	Comm            string `json:"comm,omitempty"`
 	ProcessStartNS  uint64 `json:"process_start_ns,omitempty"`

@@ -1,12 +1,35 @@
 package analyzer
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
+	"github.com/ebubekiryigit/blackbox-ebpf/internal/terminal"
 )
+
+func TestOOMPIDOnlyEvidenceIsExplicit(t *testing.T) {
+	c := model.Capture{Segments: []model.Segment{{Events: []model.Event{{MonoNS: 1, Type: "oom", PID: 42, PIDOnly: true}}}}}
+	r := Analyze(c)
+	var out bytes.Buffer
+	if err := RenderWithOptions(&out, r, RenderOptions{Theme: terminal.Theme{Width: 100}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "process identity unavailable") || !strings.Contains(out.String(), "PID: 42") {
+		t.Fatalf("limited victim identity was hidden: %s", out.String())
+	}
+	for _, f := range r.Findings {
+		if f.Category == "oom" && len(f.Evidence) > 0 && !strings.Contains(f.Evidence[0].Value, "process identity unavailable") {
+			t.Fatalf("limited victim evidence was hidden: %+v", f)
+		}
+	}
+	encoded, err := json.Marshal(r)
+	if err != nil || !strings.Contains(string(encoded), `"pid_only":true`) {
+		t.Fatalf("JSON lost PID-only marker: %s, %v", encoded, err)
+	}
+}
 
 func TestOOMFindingUsesAggregateOrRetainedCountWithoutAddingThem(t *testing.T) {
 	for _, test := range []struct {

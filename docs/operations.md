@@ -339,7 +339,8 @@ record when recording began, allowing a request that predates startup to be
 explained directly; older captures do not infer that reason from lifetime counters.
 
 Block I/O records issue context, which may be a kernel worker.
-TCP ownership is unavailable. OOM identifies the victim.
+TCP ownership is unavailable. OOM identifies the victim when the kernel exposes
+its task; older kernels may provide only a PID, marked as such in reports and JSON.
 Coincident signals describe timing, not causation.
 
 No packet payloads, application queries, argv or process environments are

@@ -42,6 +42,7 @@ const (
 	oomVarDetailRate          = "detail_rate"
 	oomVarPossibleCpus        = "possible_cpus"
 	oomVarThresholdNs         = "threshold_ns"
+	oomVarVictimTaskArg       = "victim_task_arg"
 )
 
 // loadOom returns the embedded CollectionSpec for oom.
@@ -105,6 +106,7 @@ type oomVariableSpecs struct {
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
 	PossibleCpus        *ebpf.VariableSpec `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
+	VictimTaskArg       *ebpf.VariableSpec `ebpf:"victim_task_arg"`
 }
 
 // oomObjects contains all objects after they have been loaded into the kernel.
@@ -146,6 +148,7 @@ type oomVariables struct {
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
 	PossibleCpus        *ebpf.Variable `ebpf:"possible_cpus"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
+	VictimTaskArg       *ebpf.Variable `ebpf:"victim_task_arg"`
 }
 
 // oomPrograms contains all programs after they have been loaded into the kernel.

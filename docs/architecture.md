@@ -76,7 +76,8 @@ Disabled sensors are outside the strict requirement.
 
 Process identity includes TGID and start time to avoid merging reused PIDs.
 Block I/O identifies dispatch context, TCP process ownership is not collected, and OOM details
-identify the victim. Timing correlations are observations, not causal conclusions.
+identify the victim when the kernel exposes its task. On kernels exposing only a victim PID,
+the detail marks process identity as unavailable. Timing correlations are observations, not causal conclusions.
 TCP reset details distinguish sent and received observations. Socket-less responses
 read only addresses and ports from the incoming packet headers and reverse the
 tuple; active resets use the socket's wire port even after its bind port is cleared.

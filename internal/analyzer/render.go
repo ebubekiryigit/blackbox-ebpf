@@ -111,6 +111,10 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 				}
 			case "oom":
 				detail, tone = "OOM victim", terminal.Critical
+				if e.PIDOnly {
+					process = "—"
+					detail += " · PID only; process identity unavailable"
+				}
 			case "tcp_retransmit", "tcp_reset":
 				tcp = true
 				if e.Comm == "" && e.PID == 0 {

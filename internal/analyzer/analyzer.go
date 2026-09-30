@@ -128,7 +128,11 @@ func Analyze(c model.Capture) Report {
 		if e.Type == "oom" {
 			oomDetails++
 			if len(oomEvidence) < maxOOMEvidenceRefs {
-				oomEvidence = append(oomEvidence, EvidenceRef{"event", i, fmt.Sprintf("victim %s pid=%d", e.Comm, e.PID)})
+				description := fmt.Sprintf("victim %s pid=%d", e.Comm, e.PID)
+				if e.PIDOnly {
+					description = fmt.Sprintf("victim pid=%d (process identity unavailable)", e.PID)
+				}
+				oomEvidence = append(oomEvidence, EvidenceRef{"event", i, description})
 			}
 		}
 	}

@@ -122,6 +122,13 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 					constants["rq_arg_index"] = index
 				}
 			}
+			if d.name == "oom" {
+				var taskArg uint32
+				taskArg, err = oomVictimTaskArg()
+				if err == nil {
+					constants["victim_task_arg"] = taskArg
+				}
+			}
 			if err == nil {
 				for name, value := range constants {
 					if err = spec.Variables[name].Set(value); err != nil {
@@ -226,6 +233,43 @@ func blockRequestIndex() (uint32, error) {
 	}
 	return 0, fmt.Errorf("unsupported block request tracepoint arguments")
 }
+
+func oomVictimTaskArg() (uint32, error) {
+	spec, err := btf.LoadKernelSpec()
+	if err != nil {
+		return 0, err
+	}
+	var trace *btf.Typedef
+	if err := spec.TypeByName("btf_trace_mark_victim", &trace); err != nil {
+		return 0, fmt.Errorf("cannot establish OOM tracepoint argument layout: %w", err)
+	}
+	ptr, ok := btf.UnderlyingType(trace.Type).(*btf.Pointer)
+	if !ok {
+		return 0, fmt.Errorf("unexpected OOM tracepoint BTF")
+	}
+	proto, ok := btf.UnderlyingType(ptr.Target).(*btf.FuncProto)
+	if !ok {
+		return 0, fmt.Errorf("unexpected OOM tracepoint prototype")
+	}
+	return oomVictimTaskArgFromProto(proto)
+}
+
+func oomVictimTaskArgFromProto(proto *btf.FuncProto) (uint32, error) {
+	if len(proto.Params) < 2 {
+		return 0, fmt.Errorf("unsupported OOM tracepoint arguments")
+	}
+	switch arg := btf.UnderlyingType(proto.Params[1].Type).(type) {
+	case *btf.Int:
+		if arg.Size == 4 {
+			return 0, nil
+		}
+	case *btf.Pointer:
+		if task, ok := btf.UnderlyingType(arg.Target).(*btf.Struct); ok && task.Name == "task_struct" {
+			return 1, nil
+		}
+	}
+	return 0, fmt.Errorf("unsupported OOM victim argument type")
+}
 func (s *kernelSensor) fail(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -285,6 +329,9 @@ func normalize(w wireEvent) model.Event {
 		kind = "oom"
 	}
 	e := model.Event{MonoNS: w.MonoNS, Type: kind, PID: w.PID, TGID: w.TGID, Comm: strings.TrimRight(string(w.Comm[:]), "\x00"), ProcessStartNS: w.ProcessStartNS, CgroupID: w.CgroupID, CPU: w.CPU, LatencyNS: w.LatencyNS, Major: w.Major, Minor: w.Minor, Bytes: w.Bytes, SourcePort: w.SourcePort, DestinationPort: w.DestinationPort, State: w.State}
+	if w.Kind == 5 && w.Operation == 1 {
+		e.PIDOnly = true
+	}
 	if w.Kind == 1 {
 		switch w.Operation {
 		case 0:
