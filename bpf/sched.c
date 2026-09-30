@@ -32,13 +32,27 @@ int wakeup_new(struct bpf_raw_tracepoint_args *ctx) {
 SEC("raw_tp/sched_switch")
 int switch_task(struct bpf_raw_tracepoint_args *ctx) {
   struct task_struct *prev = (void *)ctx->args[1], *next = (void *)ctx->args[2];
+  int preempt = ctx->args[0] != 0;
   long state = 0;
   if (bpf_core_field_exists(prev->__state))
     state = BPF_CORE_READ(prev, __state);
   else
     state = BPF_CORE_READ(prev, state);
-  if (state == 0)
-    enqueue(prev);
+  __u32 prev_pid = BPF_CORE_READ(prev, pid);
+  if (prev_pid) {
+    if (preempt || state == 0) {
+      __u64 now = bpf_ktime_get_ns();
+      // A switch-out starts a fresh wait, even after a wakeup while still on CPU.
+      if (bpf_map_update_elem(&runnable, &prev_pid, &now, BPF_ANY)) {
+        struct stats *s = get_stats();
+        if (s)
+          __sync_fetch_and_add(&s->tracking_failures, 1);
+      }
+    } else {
+      // A blocked task has no runnable wait; discard any earlier wakeup.
+      bpf_map_delete_elem(&runnable, &prev_pid);
+    }
+  }
   __u32 pid = BPF_CORE_READ(next, pid);
   if (!pid)
     return 0;
