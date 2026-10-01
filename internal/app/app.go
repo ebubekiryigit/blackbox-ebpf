@@ -45,6 +45,7 @@ type Engine struct {
 	closedSensors    map[string]bool
 	clock            func() (uint64, error)
 	sampleClock      func() (clockSample, error)
+	metadataRoot     string
 	stopped          chan struct{}
 }
 
@@ -162,7 +163,11 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	if err != nil {
 		return err
 	}
-	metadata := process.NewWithPathLimit("/proc", e.Config.Resources.MetadataEntries, e.Config.Resources.MetadataPathBytes)
+	var metadataFailures atomic.Uint64
+	metadataRoot := e.metadataRoot
+	if metadataRoot == "" {
+		metadataRoot = "/proc"
+	}
 	r := recorder.NewWithSegmentInterval(e.Config.History, e.Config.RecorderBudgetBytes, e.Config.Resources.SegmentInterval, now)
 	var ingressOverloadLogged atomic.Bool
 	recorderOverloadLogged := false
@@ -180,7 +185,17 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	for _, s := range e.sensors {
 		_, err = s.Snapshot(now, now) // Exclude attachment/startup activity from interval counts.
 		if err == nil {
-			err = s.Start(ctx, sink)
+			// The sensor owns its ring-reader goroutine. A slow /proc read may
+			// delay that sensor's details, but cannot stall the recorder loop.
+			resolver := process.NewWithPathLimit(metadataRoot, e.Config.Resources.MetadataEntries, e.Config.Resources.MetadataPathBytes)
+			err = s.Start(ctx, func(v model.Event) {
+				failures := resolver.Failures
+				v = resolver.Enrich(v)
+				if resolver.Failures != failures {
+					metadataFailures.Add(resolver.Failures - failures)
+				}
+				sink(v)
+			})
 		}
 		if err != nil {
 			e.closeSensor(s)
@@ -225,7 +240,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 				h.AutoCapture.PendingForNS = until - now
 			}
 		}
-		h.MetadataFailures = metadata.Failures
+		h.MetadataFailures = metadataFailures.Load()
 		h.IngressDrops = e.ingressDrops.Load()
 		h.SnapshotFailures = e.SnapshotFailures.Load()
 		h.Sensors = append(h.Sensors, e.unavailable...)
@@ -292,7 +307,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			if err != nil {
 				return err
 			}
-			if !r.Event(metadata.Enrich(v), now) && !recorderOverloadLogged {
+			if !r.Event(v, now) && !recorderOverloadLogged {
 				recorderOverloadLogged = true
 				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
 			}
@@ -335,7 +350,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			if err != nil {
 				return err
 			}
-			if !r.Event(metadata.Enrich(v), now) && !recorderOverloadLogged {
+			if !r.Event(v, now) && !recorderOverloadLogged {
 				recorderOverloadLogged = true
 				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
 			}
