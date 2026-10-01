@@ -131,11 +131,15 @@ func strictYAML(b []byte) (map[string]any, error) {
 // YAML decoders may coerce numbers/bools into strings. Validate the node types
 // first so a typo cannot turn into a plausible but unintended configuration.
 func checkTypes(n *yaml.Node, t reflect.Type, path string) error {
+	label := path
+	if label == "" {
+		label = "config"
+	}
 	if n.Kind == yaml.AliasNode || n.Anchor != "" {
-		return fmt.Errorf("%s: YAML anchors and aliases are not supported", path)
+		return fmt.Errorf("%s: YAML anchors and aliases are not supported", label)
 	}
 	if n.Tag == "!!null" {
-		return fmt.Errorf("%s: null is not a configuration value", path)
+		return fmt.Errorf("%s: null is not a configuration value", label)
 	}
 	if t == reflect.TypeFor[time.Duration]() {
 		if n.Kind != yaml.ScalarNode || n.Tag != "!!str" {
@@ -147,7 +151,7 @@ func checkTypes(n *yaml.Node, t reflect.Type, path string) error {
 	switch t.Kind() {
 	case reflect.Struct:
 		if n.Kind != yaml.MappingNode {
-			return fmt.Errorf("%s must be a mapping", path)
+			return fmt.Errorf("%s must be a mapping", label)
 		}
 		fields := yamlFields(t)
 		seen := map[string]bool{}
@@ -164,7 +168,7 @@ func checkTypes(n *yaml.Node, t reflect.Type, path string) error {
 				return fmt.Errorf("%s: unknown key %q", path, key.Value)
 			}
 			if seen[key.Value] {
-				return fmt.Errorf("%s: duplicate key %q", path, key.Value)
+				return fmt.Errorf("%s: duplicate key %q", label, key.Value)
 			}
 			seen[key.Value] = true
 			name := key.Value

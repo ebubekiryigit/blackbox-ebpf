@@ -74,6 +74,24 @@ func TestConfigurationPrecedenceAndStrictParsing(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigErrorsIdentifyRootAndNestedPaths(t *testing.T) {
+	for _, tc := range []struct{ yaml, want string }{
+		{"history: 2m\nhistory: 3m", `config: duplicate key "history"`},
+		{"&config {}", "config: YAML anchors and aliases are not supported"},
+		{"null", "config: null is not a configuration value"},
+		{"[history]", "config must be a mapping"},
+		{"auto_capture:\n  enabled: true\n  enabled: false", `auto_capture: duplicate key "enabled"`},
+		{"auto_capture: []", "auto_capture must be a mapping"},
+	} {
+		t.Run(tc.yaml, func(t *testing.T) {
+			_, err := strictYAML([]byte(tc.yaml))
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error=%v, want %q", err, tc.want)
+			}
+		})
+	}
+}
 func TestExplicitFalseAndNestedFlags(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte("strict: true\nsensors: [tcp]\nthresholds:\n  block_io:\n    warn: 42ms\n"), 0600); err != nil {
