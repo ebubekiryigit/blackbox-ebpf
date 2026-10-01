@@ -103,7 +103,23 @@ func TestStatusShowsLimitedTCPResetCoverage(t *testing.T) {
 	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"RECORDER ACTIVE · COLLECTION NOTES", "TCP — Recording · reset coverage limited", "socketless sent resets", "Zero observed resets cannot establish their absence"} {
+	for _, want := range []string{"RECORDER ACTIVE", "TCP — Recording", "Capability:", "TIME_WAIT", "request sockets", "Zero observed resets cannot", "establish their absence."} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status omitted %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "COLLECTION NOTES") || strings.Contains(out.String(), "reset coverage limited") {
+		t.Fatalf("known capability raised a collection warning:\n%s", out.String())
+	}
+}
+
+func TestStatusWarnsAboutUnknownTCPResetCoverage(t *testing.T) {
+	h := model.Health{Sensors: []model.SensorHealth{{Name: "tcp", State: "healthy", TCPResetCoverage: model.TCPResetCoverageUnknown}}}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"RECORDER ACTIVE · COLLECTION NOTES", "TCP — Recording · reset coverage limited", "could not be determined"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("status omitted %q:\n%s", want, out.String())
 		}

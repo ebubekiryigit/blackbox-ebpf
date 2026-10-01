@@ -70,18 +70,27 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 	for _, s := range r.Signals {
 		tone, headline, detail := signalView(r, s)
 		t.Notice(&b, tone, terminal.Sensor(s.Family)+" — "+headline, detail)
+		for _, note := range a.Reasons {
+			if note.Scope == "sensor_capability" && !note.Limited && note.Sensor == s.Family {
+				t.Line(&b, terminal.Muted, "    ", "Capability: "+note.Explanation)
+			}
+		}
 	}
 	t.Line(&b, terminal.Muted, "  ", "Latency percentiles are histogram bounds. Conclusions apply to captured evidence.")
 
-	if len(a.Reasons) > 0 {
-		t.Section(&b, "EVIDENCE TO REVIEW")
-		for i, n := range a.Reasons {
-			if i > 0 {
-				fmt.Fprintln(&b)
-			}
-			t.Notice(&b, severityTone(n.Severity), n.Title, n.Explanation)
-			t.Line(&b, terminal.Muted, "    ", reasonContext(n))
+	shown := false
+	for _, n := range a.Reasons {
+		if !n.Limited && n.Scope == "sensor_capability" {
+			continue // Known capability notes are shown on the sensor card.
 		}
+		if !shown {
+			t.Section(&b, "EVIDENCE TO REVIEW")
+		} else {
+			fmt.Fprintln(&b)
+		}
+		shown = true
+		t.Notice(&b, severityTone(n.Severity), n.Title, n.Explanation)
+		t.Line(&b, terminal.Muted, "    ", reasonContext(n))
 	}
 	if len(r.Timeline) > 0 {
 		t.Section(&b, "EVENTS · UTC")

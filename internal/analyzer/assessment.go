@@ -123,11 +123,13 @@ func assess(r Report) Assessment {
 			}
 		}
 		if s.Family == "tcp" && (tcpResetCoverage == model.TCPResetCoverageLimited || tcpResetCoverage == model.TCPResetCoverageUnknown) {
-			explanation := "This kernel's TCP reset tracepoint does not expose socketless sent resets such as refused connections. Zero observed resets cannot establish their absence."
+			severity, limited := "info", false
+			explanation := "This kernel's TCP reset tracepoint does not expose sent resets without a full socket, including refused connections, TIME_WAIT and request sockets. Zero observed resets cannot establish their absence."
 			if tcpResetCoverage == model.TCPResetCoverageUnknown {
+				severity, limited = "warning", true
 				explanation = "The kernel's socketless sent-reset tracepoint capability could not be determined. Zero observed resets cannot establish their absence."
 			}
-			add(CoverageReason{Code: "tcp_socketless_resets_unavailable", Severity: "warning", Scope: "sensor_capability", Sensor: "tcp", Limited: true, Title: "TCP reset coverage is limited", Explanation: explanation, Evidence: []EvidenceRef{{"sensor_health", lifeIndex, "tcp_reset_coverage=" + tcpResetCoverage}}})
+			add(CoverageReason{Code: "tcp_socketless_resets_unavailable", Severity: severity, Scope: "sensor_capability", Sensor: "tcp", Limited: limited, Title: "TCP reset coverage is limited", Explanation: explanation, Evidence: []EvidenceRef{{"sensor_health", lifeIndex, "tcp_reset_coverage=" + tcpResetCoverage}}})
 		}
 		current, historical := model.CounterNotes(s.Family, s.Loss), model.CounterNotes(s.Family, life)
 		for _, n := range current {
@@ -235,11 +237,19 @@ func assess(r Report) Assessment {
 	if h.IngressDrops+h.RecorderDrops > 0 {
 		add(CoverageReason{Code: "userspace_drops", Severity: "warning", Scope: "lifetime_window_unknown", Count: h.IngressDrops + h.RecorderDrops, Limited: true, Title: "Some observations were dropped during this daemon run", Explanation: fmt.Sprintf("%d event details were rejected by userspace ingress; %d observations could not be retained by the recorder. These counters are lifetime-only; occurrence in this window is unknown.", h.IngressDrops, h.RecorderDrops), Evidence: []EvidenceRef{{"health", 0, fmt.Sprintf("ingress_drops=%d recorder_drops=%d (daemon lifetime)", h.IngressDrops, h.RecorderDrops)}}})
 	}
-	if len(a.Reasons) > 0 {
+	limitedReasons := 0
+	for _, reason := range a.Reasons {
+		if reason.Limited {
+			if limitedReasons == 0 {
+				a.Evidence = "Evidence incomplete: " + reason.Title + "."
+			}
+			limitedReasons++
+		}
+	}
+	if limitedReasons > 0 {
 		a.EvidenceState = "limited"
-		a.Evidence = "Evidence incomplete: " + a.Reasons[0].Title + "."
-		if len(a.Reasons) > 1 {
-			a.Evidence += " " + quantity(uint64(len(a.Reasons)-1), "other collection note below", "other collection notes below") + "."
+		if limitedReasons > 1 {
+			a.Evidence += " " + quantity(uint64(limitedReasons-1), "other collection note below", "other collection notes below") + "."
 		}
 		if a.SignalState == "clear" {
 			a.Code, a.Severity = "no_anomalies_evidence_limited", "warning"

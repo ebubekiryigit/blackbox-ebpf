@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,30 @@ func quietReport() Report {
 	return r
 }
 
+func TestKnownTCPResetCapabilityIsPreservedWithoutWindowWarning(t *testing.T) {
+	r := quietReport()
+	r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageLimited
+	r.Assessment = assess(r)
+	if len(r.Assessment.Reasons) != 1 {
+		t.Fatalf("capability note missing: %+v", r.Assessment)
+	}
+	note := r.Assessment.Reasons[0]
+	if note.Scope != "sensor_capability" || note.Limited || note.Severity != "info" || r.Assessment.EvidenceState != "complete" {
+		t.Fatalf("known capability was treated as a collection gap: %+v", r.Assessment)
+	}
+	encoded, err := json.Marshal(r)
+	if err != nil || !bytes.Contains(encoded, []byte(`"scope":"sensor_capability"`)) || !bytes.Contains(encoded, []byte(`"limits_evidence":false`)) {
+		t.Fatalf("capability lost in JSON: err=%v report=%s", err, encoded)
+	}
+	var out bytes.Buffer
+	if err := Render(&out, r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Capability:") || !strings.Contains(out.String(), "TIME_WAIT") || strings.Contains(out.String(), "EVIDENCE TO REVIEW") || strings.Contains(out.String(), "EVIDENCE LIMITED") {
+		t.Fatalf("capability caveat was missing or raised a window warning:\n%s", out.String())
+	}
+}
+
 func TestAssessmentSeparatesSignalsAndEvidence(t *testing.T) {
 	cases := []struct {
 		name            string
@@ -29,7 +54,11 @@ func TestAssessmentSeparatesSignalsAndEvidence(t *testing.T) {
 		title, evidence string
 	}{
 		{"quiet", func(*Report) {}, terminal.Good, "NO ANOMALIES OBSERVED", "no collection gaps"},
-		{"limited TCP resets", func(r *Report) { r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageLimited }, terminal.Warning, "EVIDENCE LIMITED", "TCP reset coverage"},
+		{"limited TCP resets", func(r *Report) { r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageLimited }, terminal.Good, "NO ANOMALIES OBSERVED", "no collection gaps"},
+		{"limited TCP resets and actual loss", func(r *Report) {
+			r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageLimited
+			r.Signals[2].Loss.RingFailures = 1
+		}, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
 		{"unknown TCP resets", func(r *Report) { r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageUnknown }, terminal.Warning, "EVIDENCE LIMITED", "TCP reset coverage"},
 		{"older details compacted", func(r *Report) { r.Manifest.AggregateOnlyUntilNS = r.Manifest.StartMonoNS + uint64(30*time.Second) }, terminal.Warning, "EVIDENCE LIMITED", "Older event details were compacted"},
 		{"missing I/O starts", func(r *Report) { r.Signals[0].Loss.Unmatched = 11 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},

@@ -136,12 +136,12 @@ static __always_inline int record(struct sock *sk, struct sk_buff *skb,
   e->operation = TCP_METADATA_KNOWN | (sk ? TCP_SOCKET_PRESENT : 0);
   if (sk)
     e->state = BPF_CORE_READ(sk, __sk_common.skc_state);
-  // TIME_WAIT and request sockets are not full sockets. Like the kernel's
-  // tracepoint formatter, use the incoming packet for their reset response.
-  if (kind == 4 && (!sk || e->state == 6 || e->state == 12) &&
+  // Listeners have no connected peer; TIME_WAIT and request sockets are not
+  // full sockets. Use the incoming packet for these reset responses.
+  if (kind == 4 && (!sk || e->state == 6 || e->state == 10 || e->state == 12) &&
       response_endpoints(e, skb)) {
     e->operation |= TCP_ENDPOINT_PACKET;
-  } else if (e->state != 6 && e->state != 12 && socket_endpoints(e, sk)) {
+  } else if (e->state != 6 && e->state != 10 && e->state != 12 && socket_endpoints(e, sk)) {
     e->operation |= TCP_ENDPOINT_SOCKET;
   } else if (kind == 4 && response_endpoints(e, skb)) {
     e->operation |= TCP_ENDPOINT_PACKET;

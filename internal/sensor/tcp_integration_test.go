@@ -4,6 +4,7 @@ package sensor
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"net"
 	"syscall"
@@ -164,6 +165,49 @@ func TestTCPResetTuplesWithAndWithoutSocket(t *testing.T) {
 			client.Close()
 			assertTuple(t, &src, &dst, "socket", "socket")
 		})
+		t.Run(network+"/listener-stray-ack", func(t *testing.T) {
+			ip, rawNetwork := net.ParseIP("127.0.0.1"), "ip4:tcp"
+			if network == "tcp6" {
+				ip, rawNetwork = net.ParseIP("::1"), "ip6:tcp"
+			}
+			listener, er := net.ListenTCP(network, &net.TCPAddr{IP: ip})
+			if er != nil {
+				t.Fatal(er)
+			}
+			defer listener.Close()
+			// Reserve the source port too; this ACK is not part of a connection.
+			source, er := net.ListenTCP(network, &net.TCPAddr{IP: ip})
+			if er != nil {
+				t.Fatal(er)
+			}
+			defer source.Close()
+			src, dst := source.Addr().(*net.TCPAddr), listener.Addr().(*net.TCPAddr)
+			raw, er := net.DialIP(rawNetwork, &net.IPAddr{IP: ip}, &net.IPAddr{IP: ip})
+			if er != nil {
+				t.Fatal(er)
+			}
+			defer raw.Close()
+			if _, er = raw.Write(strayACK(src, dst)); er != nil {
+				t.Fatal(er)
+			}
+			timer := time.NewTimer(2 * time.Second)
+			defer timer.Stop()
+			for {
+				select {
+				case e := <-events:
+					if e.Type != "tcp_reset" || e.TCPDirection != "sent" || e.SourcePort != uint16(dst.Port) || e.DestinationPort != uint16(src.Port) {
+						continue
+					}
+					if e.SourceIP != dst.IP.String() || e.DestinationIP != src.IP.String() || e.State != 10 || e.EndpointSource != "packet_header" || e.SocketContext != "socket" || e.PID != 0 || e.TGID != 0 || e.Comm != "" {
+						t.Fatalf("listener reset lost its packet peer or provenance: %+v", e)
+					}
+					t.Logf("listener reset tuple verified: %+v", e)
+					return
+				case <-timer.C:
+					t.Fatalf("no listener reset for stray ACK %s → %s", src, dst)
+				}
+			}
+		})
 	}
 	m, err := ss[0].Snapshot(0, 1)
 	if err != nil {
@@ -172,4 +216,34 @@ func TestTCPResetTuplesWithAndWithoutSocket(t *testing.T) {
 	if m.Resets < 2*verifiedPairs || m.Count != m.Resets+m.Retransmits {
 		t.Fatalf("send/receive observations were not counted: %+v", m)
 	}
+}
+
+// TCP header plus checksum for a raw loopback ACK. No packet payload is sent.
+func strayACK(src, dst *net.TCPAddr) []byte {
+	packet := make([]byte, 20)
+	binary.BigEndian.PutUint16(packet[0:2], uint16(src.Port))
+	binary.BigEndian.PutUint16(packet[2:4], uint16(dst.Port))
+	binary.BigEndian.PutUint32(packet[8:12], 1)
+	packet[12], packet[13] = 5<<4, 0x10
+	var pseudo []byte
+	if ip := src.IP.To4(); ip != nil {
+		pseudo = append(pseudo, ip...)
+		pseudo = append(pseudo, dst.IP.To4()...)
+		pseudo = append(pseudo, 0, 6, 0, byte(len(packet)))
+	} else {
+		pseudo = append(pseudo, src.IP.To16()...)
+		pseudo = append(pseudo, dst.IP.To16()...)
+		pseudo = append(pseudo, 0, 0, 0, byte(len(packet)), 0, 0, 0, 6)
+	}
+	sum := uint32(0)
+	for _, b := range [][]byte{pseudo, packet} {
+		for i := 0; i < len(b); i += 2 {
+			sum += uint32(binary.BigEndian.Uint16(b[i : i+2]))
+		}
+	}
+	for sum>>16 != 0 {
+		sum = sum&0xffff + sum>>16
+	}
+	binary.BigEndian.PutUint16(packet[16:18], ^uint16(sum))
+	return packet
 }

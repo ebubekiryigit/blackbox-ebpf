@@ -16,7 +16,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	enabled, active := sensorCounts(h)
 	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
 	for _, s := range h.Sensors {
-		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0 || s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown
+		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0 || s.TCPResetCoverage == model.TCPResetCoverageUnknown
 	}
 	notes = notes || h.IngressDrops+h.RecorderDrops+h.MetadataFailures+h.SnapshotFailures+h.ClockChanges > 0
 	tone, title := terminal.Good, "RECORDER ACTIVE"
@@ -49,7 +49,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 			tone, state = terminal.Muted, "Disabled by configuration"
 		} else if s.State != "healthy" {
 			tone, state = terminal.Warning, "Coverage "+s.State
-		} else if s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown {
+		} else if s.TCPResetCoverage == model.TCPResetCoverageUnknown {
 			tone, state = terminal.Warning, "Recording · reset coverage limited"
 		}
 		detail := ""
@@ -62,6 +62,9 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 		t.Notice(&b, tone, terminal.Sensor(s.Name)+" — "+state)
 		if detail != "" {
 			t.Line(&b, terminal.Muted, "    ", detail)
+		}
+		if s.TCPResetCoverage == model.TCPResetCoverageLimited {
+			t.Line(&b, terminal.Muted, "    ", "Capability: sent resets without a full socket are not visible on this kernel (socketless, TIME_WAIT, request sockets). Zero observed resets cannot establish their absence.")
 		}
 	}
 	if a := h.AutoCapture; a != nil {
@@ -103,11 +106,8 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	if notes {
 		t.Section(&b, "COLLECTION NOTES · SINCE DAEMON START")
 		for _, s := range h.Sensors {
-			if s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown {
-				message := "This kernel does not expose socketless sent resets, including refused connections. Zero observed resets cannot establish their absence."
-				if s.TCPResetCoverage == model.TCPResetCoverageUnknown {
-					message = "This kernel's socketless sent-reset capability could not be determined. Zero observed resets cannot establish their absence."
-				}
+			if s.TCPResetCoverage == model.TCPResetCoverageUnknown {
+				message := "This kernel's socketless sent-reset capability could not be determined. Zero observed resets cannot establish their absence."
 				t.Notice(&b, terminal.Warning, "TCP reset coverage limited", message)
 				fmt.Fprintln(&b)
 			}
