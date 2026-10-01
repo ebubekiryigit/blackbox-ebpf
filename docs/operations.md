@@ -12,8 +12,8 @@ An interrupted detail-quota map cleanup is retried at the next aggregate poll;
 aggregate recording continues and `status` counts failed cleanup attempts. The count is
 also saved in capture health and shown in verbose analysis. It is distinct from
 kernel `detail_budget_failures`, which count event details actually lost. A
-missing or invalid quota map remains a permanent sensor failure, including in
-strict mode.
+missing quota map remains a permanent sensor failure, including in strict mode;
+other cleanup errors are counted and retried at the next poll.
 
 Compose runs with host PID, cgroup and network namespaces:
 
@@ -70,6 +70,13 @@ The socket path is CLI-only and is not accepted in YAML.
 Default best-effort mode continues with remaining sensors when a subsystem cannot
 initialize or fails permanently. Status, saved health and analysis expose the
 missing coverage and its reason. With no usable sensors, startup fails.
+On kernels with the older TCP sent-reset tracepoint signature, connection-refusal
+resets without a socket are outside sensor coverage. Blackbox checks the BTF
+signature and reports `tcp_reset_coverage: limited` in status and saved health;
+`unknown` means the capability could not be established. Analysis does not
+interpret zero observed resets as full reset coverage in either case.
+On kernels with the newer retransmit tracepoint error argument, failed send
+attempts are excluded from the retransmit count.
 
 ```sh
 sudo blackbox daemon --strict
@@ -112,6 +119,9 @@ poll times, so intervals spanning a window boundary are assigned by their poll t
 After a file is saved, the next incident's requested start is clipped to the
 previous file's end. An aggregate interval crossing that boundary is included in
 the new file so its trigger evidence is not dropped; this can overlap one interval.
+Selection includes the first complete aggregate poll at or after the post-window
+deadline, so the final interval is not omitted. The saved end can be up to one
+`poll_interval` later than the configured deadline.
 A failed publication does not advance the saved boundary, so the next incident
 can still include the failed interval if history remains retained. There is no
 cooldown and no trigger is suppressed.
@@ -228,8 +238,12 @@ add memory. One in-flight snapshot may keep otherwise evicted segments alive
 until writing finishes. The 256 MiB decoded `.bbx` limit bounds archive bytes,
 not the RSS of `analyze`. Status exposes BPF memory estimates when the kernel
 supplies them. Status shows how old the oldest retained segment is, not a
-guarantee of continuous sensor coverage. High load may shorten retained history
-or drop details; inspect counters alongside the report.
+guarantee of continuous sensor coverage. When the budget fills, the oldest
+detailed segments become one-minute aggregate-only rollups. Detail retention
+has no fixed time window; status shows the actual detailed and aggregate spans.
+If summaries themselves exceed the budget, the oldest are evicted. Captures
+identify aggregate-only periods so analysis does not imply those event details
+were retained; inspect sensor coverage alongside the report.
 
 For deployment sizing, measure daemon peak RSS from `/proc/<pid>/status`
 (`VmHWM`) during representative recording and snapshot load. Measure offline
@@ -338,8 +352,8 @@ intervals. Lifetime totals cover the entire daemon run; they are not additional
 window losses. Historical-only sensor counters appear in verbose diagnostics and
 do not turn an otherwise clear current window into a workload warning. Ingress
 and recorder drops are lifetime-only: the report explicitly states that their
-occurrence in this window is unknown. Memory evictions, unresolved metadata and
-snapshot write failures are also lifetime diagnostics.
+occurrence in this window is unknown. Segment compactions, aggregate evictions,
+unresolved metadata and snapshot write failures are lifetime diagnostics.
 
 JSON preserves exact nanosecond timestamps, process start identities and evidence
 references. The `assessment` object is the same verdict shown in the terminal:

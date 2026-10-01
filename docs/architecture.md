@@ -10,7 +10,7 @@ service dependency.
 ```text
 C eBPF sensors → per-CPU aggregates + bounded detail rings
                          ↓
-Go sensor readers → bounded ingress → application event loop
+Go sensor readers + process metadata → bounded ingress → application event loop
                                          ↓
                            rolling immutable segments
                                          ↓
@@ -22,7 +22,7 @@ Unix socket snapshot → streamed .bbx file → offline analyzer
 | `bpf/` | Raw tracepoint programs, CO-RE field access, aggregation and detail quotas |
 | `internal/sensor` | Embedded object loading, attachment, ring decoding, aggregate polling and health |
 | `internal/autocapture` | Deterministic incident state, bounded trigger metadata, private rotating publication |
-| `internal/app` | One state-owning event loop, clock sampling, process enrichment and failure policy |
+| `internal/app` | One state-owning event loop, clock sampling, sensor-reader metadata wiring and failure policy |
 | `internal/recorder` | Time/memory retention, sealed segments and immutable snapshot selection |
 | `internal/control` | Private versioned Unix socket requests and capture streaming |
 | `internal/capture` | Versioned container, integrity validation and atomic file publication |
@@ -34,8 +34,13 @@ Unix socket snapshot → streamed .bbx file → offline analyzer
 
 The recorder has one writer. Sealed segment contents never change, so snapshots
 can share them while the writer continues. Active and boundary segments are
-copied. Segment timestamp bounds avoid scanning every retained event on snapshot;
-partial aggregate intervals are excluded rather than interpolated.
+copied. Under its fixed accounting budget, the recorder folds the oldest
+detailed segments into one-minute aggregate-only segments before dropping
+aggregate history. There is no fixed detailed-history duration: it depends on
+the configured `history` and actual load. The active rollup is copied for a
+snapshot; sealed rollups are immutable. Segment timestamp bounds avoid scanning
+every retained event on snapshot; partial aggregate intervals are excluded
+rather than interpolated.
 
 ## Timekeeping
 
@@ -75,15 +80,25 @@ initialization or permanent runtime failure terminates recording with an error.
 Disabled sensors are outside the strict requirement.
 
 Process identity includes TGID and start time to avoid merging reused PIDs.
+Each sensor reader resolves process metadata before handing a detail to the bounded
+ingress queue. Slow `/proc` reads do not block aggregate polling or the recorder
+loop; resolution failures are counted in daemon health.
 Block I/O identifies dispatch context, TCP process ownership is not collected, and OOM details
 identify the victim when the kernel exposes its task. On kernels exposing only a victim PID,
 the detail marks process identity as unavailable. Timing correlations are observations, not causal conclusions.
-TCP reset details distinguish sent and received observations. Socket-less responses
-read only addresses and ports from the incoming packet headers and reverse the
-tuple; active resets use the socket's wire port even after its bind port is cleared.
+TCP reset details distinguish sent and received observations. Socketless sent
+resets require a tracepoint signature exposing the incoming packet. Blackbox
+checks its BTF signature and marks coverage limited on older signatures, or
+unknown when the capability cannot be established. This limitation is saved in
+capture health and considered during offline analysis. When available, the
+socketless response reads addresses and ports from packet headers and reverses
+the tuple; active resets use the socket's wire port even after its bind port is cleared.
 Received reset tuples follow the incoming direction. Optional event metadata records
 endpoint provenance and whether a socket was associated, without additional maps
 or connection tracking. IRQ/current-task identity does not establish socket ownership.
+For kernels whose TCP retransmit tracepoint includes an error argument, the
+sensor counts only calls with a successful transmission result. Older kernel
+signatures retain their original success-only tracepoint behavior.
 
 ## Automatic incidents
 
@@ -91,6 +106,8 @@ The recorder loop feeds aggregate deltas to a trigger controller. One fixed wind
 groups overlapping triggers; the next trigger opens another window immediately.
 Successful consecutive files avoid repeating the full lookback while retaining
 an aggregate interval that crosses their boundary.
+Selection waits for the first complete aggregate poll after the configured
+post-trigger deadline and uses that poll boundary as the saved file end.
 At most one additional waiting window merges triggers while file output is busy.
 Snapshot selection stays on the single writer; a background worker publishes it.
 Manual and automatic snapshots share one writer lease. The private output directory

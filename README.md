@@ -36,6 +36,9 @@ docker compose exec blackbox /app/blackbox analyze /var/lib/blackbox/captures/in
 This starts the daemon with a five-minute rolling-history target, shows sensor
 health and the actual retained span, writes `captures/incident.bbx` on the host,
 and prints a terminal report.
+When the recorder budget fills, it keeps newer event details and folds older
+history into aggregate summaries. Status shows the actual span of each; a
+capture marks periods where individual events are no longer available.
 Critical incidents are also saved automatically under `captures/auto/`.
 Capture destinations are private and never overwritten, so choose a new `-o` path
 for the next incident.

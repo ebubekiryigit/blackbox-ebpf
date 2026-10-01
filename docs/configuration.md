@@ -99,10 +99,13 @@ The recorder has a fixed 32 MiB retained-history accounting budget. It covers
 event/metric backing capacity, retained string lengths, and segment bookkeeping.
 It does not bound process RSS.
 Status shows the age of the oldest retained segment alongside the configured
-`history` target. It also exposes retained bytes, budget, evictions, and drops.
-The segment age is not a guarantee of continuous sensor coverage. Under load,
-the retained window may become shorter than `history`; automatic incident files
-preserve published windows independently of the rolling recorder.
+`history` target. When the budget fills, the oldest detailed segments become
+one-minute aggregate-only rollups. There is no fixed period of detail retention:
+status shows both the actual aggregate span and the actual detailed span, plus
+budget, compactions, aggregate evictions and drops. If even aggregate summaries
+exceed the budget, the oldest summaries are evicted. The oldest segment age is
+not a guarantee of continuous sensor coverage. Automatic incident files preserve
+published windows independently of the rolling recorder.
 When any bounded stage overloads, lifetime counters expose dropped or suppressed
 details; the daemon logs the first userspace overload.
 

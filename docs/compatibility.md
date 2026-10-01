@@ -22,25 +22,40 @@ matters during an upgrade; a longer write can hold the snapshot writer lease
 longer.
 Consecutive automatic captures no longer repeat the full pre-trigger window
 after a successful publication. Trigger detection and post-window timing are
-unchanged; the selected windows may overlap by one aggregate interval to preserve
-trigger evidence.
+unchanged; selection includes the first complete poll at or after the post-window
+deadline, and windows may overlap by one aggregate interval to preserve trigger
+evidence. A published file advances the next window boundary even if its
+subsequent storage rotation fails; the path and rotation error remain visible.
 
 The next release removes the `max_memory` YAML key and `--max-memory` flag.
 The name implied a total process memory cap, but it only controlled recorder
 history accounting and could exceed the `.bbx` decoded archive budget. Remove
 the key from existing config files before upgrading; strict parsing rejects it.
 The recorder now uses a fixed 32 MiB accounting budget, so hosts previously
-configured above that value may retain less history. Inspect `status` for the
-oldest retained segment's age, evictions, and drops; analyze a capture for
-sensor coverage. `auto_capture.max_storage` no longer
+configured above that value may retain less detailed history. When the budget
+fills, the oldest detailed segments become one-minute aggregate-only rollups;
+there is no fixed detail-retention duration. Status reports actual detailed and
+aggregate spans. Captures record an `aggregate_only_until_ns` boundary, and the
+new analyzer explains it without treating summarized counts as missing sensor
+coverage. Older readers ignore this pre-v1 field; use the new reader for new
+captures. `auto_capture.max_storage` no longer
 has a 1 TiB ceiling; the default stays 1 GiB and `max_files` still bounds the
 per-write directory scan/sort work.
 The control health response adds `retained_span_ns` without changing protocol
 version `1`; older clients ignore it, and a newer client hides the age line
 when talking to an older daemon that omits the field.
+It also adds optional `detailed_from_ns`, `detailed_span_ns` and
+`aggregate_evictions` fields. The old `memory_evicted_segments` counter now
+describes detailed segment compactions under memory pressure; aggregate losses
+have their own counter.
 Sensor health also adds the optional `detail_budget_prune_failures` lifetime
 counter. It records interrupted userspace quota cleanup without claiming event
 detail loss; older clients ignore it.
+TCP sensor health adds optional `tcp_reset_coverage`. Older sent-reset
+tracepoint signatures lack socketless resets; status and analysis report limited
+coverage from the kernel's BTF signature. An undetermined signature is reported
+as unknown rather than full coverage. Existing capture and socket formats stay
+unchanged.
 
 The `.bbx` container is a checksummed zstd-compressed tar with a manifest, host
 metadata, ordered JSON segments, and a completion marker. Readers bound decoded

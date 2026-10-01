@@ -12,7 +12,23 @@
   in a non-evicting map, reclaim old seconds during aggregate polling, and
   report quota-state failures separately from missing latency start records.
 - Avoid repeating the full lookback in consecutive successful automatic
-  captures while retaining trigger intervals that cross a file boundary.
+  captures while retaining trigger intervals that cross a file boundary. Include
+  the first complete aggregate poll after the post-window deadline and retain
+  the published boundary even when later file rotation fails.
+- Move process metadata resolution to each sensor's existing reader goroutine so
+  slow `/proc` reads cannot block aggregate polling or local control requests.
+- Report limited or unknown socketless TCP sent-reset coverage from the kernel
+  BTF signature in status, captures and analysis. Retry transient detail-budget
+  cleanup failures without disabling valid aggregate sensors.
+- On kernels whose retransmit tracepoint includes an error argument, exclude
+  failed send attempts from TCP retransmit counts.
+- Assess automatic trigger evidence per sensor family, so a critical signal in
+  another subsystem cannot hide missing trigger evidence. Give removed
+  `max_memory` settings a direct migration error.
+- Under the fixed recorder budget, keep event details as long as `history` and
+  memory permit, then fold the oldest segments into aggregate-only summaries.
+  Status reports actual detailed and aggregate spans; captures and reports mark
+  the portion whose individual details were compacted.
 - Record the scheduler tracking-map capacity in new capture manifests.
 - Remove the misleading `max_memory` YAML/CLI setting. Recorder history keeps a
   fixed 32 MiB accounting budget; existing configs must remove `max_memory`
