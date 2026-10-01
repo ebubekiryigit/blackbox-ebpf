@@ -144,10 +144,27 @@ func assess(r Report) Assessment {
 	// Trigger evidence may outlive its source intervals after retention eviction.
 	// Keep it separate from window totals and never count it twice.
 	triggerIntervalsMissing := false
+	triggerEvidenceMissing := false
 	if incident := r.Manifest.AutoIncident; incident != nil {
 		for _, trigger := range incident.Triggers {
 			if trigger.FirstIntervalStartNS < r.Manifest.StartMonoNS {
 				triggerIntervalsMissing = true
+			}
+			retained := false
+			for _, signal := range r.Signals {
+				if signal.Family != trigger.Family {
+					continue
+				}
+				if trigger.Family == "oom" {
+					retained = signal.Count > 0 || details["oom"] > 0
+				} else {
+					retained = criticalCount(r, signal) > 0
+				}
+				break
+			}
+			if !retained {
+				triggerEvidenceMissing = true
+				add(CoverageReason{Code: "trigger_evidence_not_retained", Severity: "warning", Scope: "trigger", Sensor: trigger.Family, Limited: true, Title: sensorName(trigger.Family) + ": critical trigger evidence not retained", Explanation: "The automatic trigger metadata confirms why recording started, but retained aggregates and details do not show this subsystem's triggering observations. Trigger counts are not added to captured-window totals.", Evidence: []EvidenceRef{{Kind: "manifest", Value: "auto_incident"}}})
 			}
 		}
 		if triggerIntervalsMissing {
@@ -169,12 +186,9 @@ func assess(r Report) Assessment {
 		a.Code, a.Title, a.SignalState = "no_activity", "NO ACTIVITY TO ASSESS", "no_activity"
 		a.Signals = "Signals: no activity measured; I/O and scheduler latency cannot be assessed."
 	}
-	if r.Manifest.AutoIncident != nil && a.SignalState != "critical" {
+	if triggerEvidenceMissing && a.SignalState != "critical" {
 		a.Code, a.Severity, a.Title, a.SignalState = "critical_trigger_detected", "critical", "CRITICAL TRIGGER DETECTED · EVIDENCE LIMITED", "critical"
 		a.Signals = "Signals: automatic trigger metadata confirms critical latency or OOM; triggering observations are absent from retained evidence. Captured-window counts exclude those triggers."
-		if !triggerIntervalsMissing {
-			add(CoverageReason{Code: "trigger_evidence_not_retained", Severity: "warning", Scope: "trigger", Limited: true, Title: "Critical trigger observations are absent from retained evidence", Explanation: "The automatic trigger metadata confirms why recording started, but retained aggregates and details do not show those critical observations. Trigger counts are not added to captured-window totals.", Evidence: []EvidenceRef{{Kind: "manifest", Value: "auto_incident"}}})
-		}
 	}
 	// Details from one subsystem do not provide attribution for another.
 	for i, s := range r.Signals {

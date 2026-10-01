@@ -74,3 +74,19 @@ func TestAutomaticTriggerWithoutRetainedCriticalAggregate(t *testing.T) {
 		t.Fatal("retained critical aggregate lost its verdict", a)
 	}
 }
+
+func TestOtherCriticalFamilyDoesNotHideMissingTriggerEvidence(t *testing.T) {
+	r := quietReport()
+	r.Signals[1].Critical = 1 // Scheduler is critical in the captured window.
+	r.Manifest.AutoIncident = &model.AutoIncident{Triggers: []model.AutoTrigger{{Family: "block_io", Reason: "critical_latency", Count: 1, FirstIntervalStartNS: 10, LastIntervalEndNS: 20}}}
+	a := assess(r)
+	if a.Code != "critical_latency_observed" || a.Observed.Critical != 1 || a.EvidenceState != "limited" {
+		t.Fatalf("other critical observation hid missing trigger coverage: %+v", a)
+	}
+	for _, reason := range a.Reasons {
+		if reason.Code == "trigger_evidence_not_retained" && reason.Sensor == "block_io" {
+			return
+		}
+	}
+	t.Fatal("missing block I/O trigger evidence not reported", a.Reasons)
+}
