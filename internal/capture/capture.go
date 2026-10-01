@@ -198,6 +198,9 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 	if c.Manifest.EndMonoNS < c.Manifest.StartMonoNS || c.Manifest.RequestedStartMonoNS > c.Manifest.StartMonoNS || c.Manifest.RecordingStartMonoNS > c.Manifest.StartMonoNS {
 		return c, fmt.Errorf("invalid capture time window")
 	}
+	if c.Manifest.AggregateOnlyUntilNS != 0 && (c.Manifest.AggregateOnlyUntilNS < c.Manifest.StartMonoNS || c.Manifest.AggregateOnlyUntilNS > c.Manifest.EndMonoNS) {
+		return c, fmt.Errorf("invalid aggregate-only window")
+	}
 	if !c.Manifest.AutoIncident.Valid(c.Manifest.EndMonoNS) {
 		return c, fmt.Errorf("invalid automatic incident metadata")
 	}

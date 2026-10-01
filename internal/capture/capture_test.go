@@ -36,6 +36,42 @@ func TestClockDiscontinuityRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTCPResetCapabilityRoundTrip(t *testing.T) {
+	c := sample()
+	c.Manifest.Health.Sensors = []model.SensorHealth{{Name: "tcp", State: "healthy", TCPResetCoverage: model.TCPResetCoverageLimited}}
+	var b bytes.Buffer
+	if err := (Container{}).Write(&b, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (Container{}).Read(&b)
+	if err != nil || len(got.Manifest.Health.Sensors) != 1 || got.Manifest.Health.Sensors[0].TCPResetCoverage != model.TCPResetCoverageLimited {
+		t.Fatalf("TCP reset limitation was not preserved: err=%v capture=%+v", err, got)
+	}
+}
+
+func TestAggregateOnlyWindowRoundTripAndBounds(t *testing.T) {
+	c := sample()
+	c.Manifest.AggregateOnlyUntilNS = 15
+	c.Segments[0].Events = nil
+	c.Segments[0].Metrics = []model.Metric{{Family: "scheduler", StartMonoNS: 10, EndMonoNS: 15, Count: 5}}
+	var b bytes.Buffer
+	if err := (Container{}).Write(&b, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (Container{}).Read(&b)
+	if err != nil || got.Manifest.AggregateOnlyUntilNS != 15 {
+		t.Fatalf("aggregate-only boundary lost: %v, %+v", err, got.Manifest)
+	}
+	c.Manifest.AggregateOnlyUntilNS = 21
+	b.Reset()
+	if err := (Container{}).Write(&b, c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Container{}).Read(&b); err == nil || !strings.Contains(err.Error(), "invalid aggregate-only window") {
+		t.Fatalf("invalid boundary accepted: %v", err)
+	}
+}
+
 func TestRejectCaptureWithoutClockSource(t *testing.T) {
 	c := sample()
 	c.Host.ClockSource = ""

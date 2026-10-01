@@ -167,7 +167,11 @@ func RenderWithOptions(w io.Writer, r Report, options RenderOptions) error {
 		processes(&b, r, options)
 	} else {
 		fmt.Fprintln(&b)
-		t.Line(&b, terminal.Muted, "  ", "No individual event details retained. Normal activity is summarized above.")
+		if r.Manifest.AggregateOnlyUntilNS > r.Manifest.StartMonoNS {
+			t.Line(&b, terminal.Muted, "  ", "No individual event details retained. Older observations are available as aggregates above.")
+		} else {
+			t.Line(&b, terminal.Muted, "  ", "No individual event details retained. Normal activity is summarized above.")
+		}
 	}
 	for _, f := range r.Findings {
 		if f.Category == "correlation" {
@@ -334,7 +338,7 @@ func diagnostics(w io.Writer, r Report, t terminal.Theme) {
 	}
 	h := r.Manifest.Health
 	t.Table(w, "Recorder counter\tLifetime total", []string{
-		fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Memory history evictions\t%d", h.EvictedSegments), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures), fmt.Sprintf("Clock discontinuities\t%d", h.ClockChanges),
+		fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Detailed segment compactions\t%d", h.EvictedSegments), fmt.Sprintf("Aggregate history evictions\t%d", h.AggregateEvictions), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures), fmt.Sprintf("Clock discontinuities\t%d", h.ClockChanges),
 	}, nil)
 	if h.MetadataFailures > 0 {
 		t.Line(w, terminal.Muted, "  ", "Unresolved process metadata does not discard the kernel observation.")

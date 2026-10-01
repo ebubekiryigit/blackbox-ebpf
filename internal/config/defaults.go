@@ -16,7 +16,10 @@ const (
 	MinMemory      int64 = 1 << 20
 	// RecorderBudgetBytes caps retained history accounting, not process RSS.
 	// Keep it below the decoded archive budget; snapshots also need working memory.
-	RecorderBudgetBytes       int64 = 32 << 20
+	RecorderBudgetBytes int64 = 32 << 20
+	// Older detailed segments are folded into aggregate-only time buckets when
+	// the recorder budget is pressured. This is not an operator setting.
+	RollupInterval                  = time.Minute
 	MaxDetailRate                   = 10000
 	MaxQueueEntries                 = 1 << 20
 	MaxTrackingEntries              = 1 << 20

@@ -228,6 +228,9 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 		if now >= h.RetainedFromNS {
 			h.RetainedSpanNS = now - h.RetainedFromNS
 		}
+		if now >= h.DetailedFromNS {
+			h.DetailedSpanNS = now - h.DetailedFromNS
+		}
 		if e.host.ClockSource == "boottime" {
 			at := tracker.last.wall
 			h.ObservedAt = &at

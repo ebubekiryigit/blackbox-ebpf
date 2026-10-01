@@ -36,6 +36,9 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 			retained += " · history target " + config.DurationText(time.Duration(settings.HistoryNS))
 		}
 		lines = append(lines, retained)
+		if h.DetailedSpanNS > 0 && h.DetailedSpanNS < h.RetainedSpanNS {
+			lines = append(lines, "Individual event details retained for "+time.Duration(h.DetailedSpanNS).Round(time.Second).String()+"; older history contains aggregates only")
+		}
 	}
 	lines = append(lines, "Counters cover this daemon run. Analyze a snapshot to assess workload signals.")
 	t.Panel(&b, tone, title, lines...)
@@ -139,7 +142,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 				t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s: %s zero-byte logical WRITE completions excluded as bookkeeping; dispatched cache flushes are still measured.", terminal.Sensor(s.Name), terminal.Count(s.BookkeepingCompletions)))
 			}
 		}
-		t.Table(&b, "Recorder counter\tLifetime total", []string{fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Memory history evictions\t%d", h.EvictedSegments), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures)}, nil)
+		t.Table(&b, "Recorder counter\tLifetime total", []string{fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Detailed segment compactions\t%d", h.EvictedSegments), fmt.Sprintf("Aggregate history evictions\t%d", h.AggregateEvictions), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures)}, nil)
 	}
 	fmt.Fprintln(&b)
 	if !verbose {

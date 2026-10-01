@@ -29,6 +29,9 @@ func TestAssessmentSeparatesSignalsAndEvidence(t *testing.T) {
 		title, evidence string
 	}{
 		{"quiet", func(*Report) {}, terminal.Good, "NO ANOMALIES OBSERVED", "no collection gaps"},
+		{"limited TCP resets", func(r *Report) { r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageLimited }, terminal.Warning, "EVIDENCE LIMITED", "TCP reset coverage"},
+		{"unknown TCP resets", func(r *Report) { r.Manifest.Health.Sensors[2].TCPResetCoverage = model.TCPResetCoverageUnknown }, terminal.Warning, "EVIDENCE LIMITED", "TCP reset coverage"},
+		{"older details compacted", func(r *Report) { r.Manifest.AggregateOnlyUntilNS = r.Manifest.StartMonoNS + uint64(30*time.Second) }, terminal.Warning, "EVIDENCE LIMITED", "Older event details were compacted"},
 		{"missing I/O starts", func(r *Report) { r.Signals[0].Loss.Unmatched = 11 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
 		{"invalid detail", func(r *Report) { r.Signals[1].Loss.DecodeFailures = 2 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
 		{"quota state unavailable", func(r *Report) { r.Signals[1].Loss.DetailFailures = 2 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},

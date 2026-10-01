@@ -37,15 +37,19 @@ func (s *retained) observe(start, end uint64) {
 }
 
 type Recorder struct {
-	started         uint64
-	segmentInterval uint64
-	history         uint64
-	max             int64
-	bytes           int64
-	sealed          []retained
-	active          retained
-	drops           uint64
-	evictions       uint64
+	started            uint64
+	segmentInterval    uint64
+	history            uint64
+	max                int64
+	bytes              int64
+	rollups            []retained
+	rollupActive       *retained
+	rollupBucket       uint64
+	sealed             []retained
+	active             retained
+	drops              uint64
+	evictions          uint64
+	aggregateEvictions uint64
 }
 
 func New(history time.Duration, max int64, now uint64) *Recorder {
@@ -71,13 +75,22 @@ func (r *Recorder) Advance(now uint64) {
 	}
 	r.active.segment.EndMonoNS = now
 	for len(r.sealed) > 0 && now >= r.sealed[0].segment.EndMonoNS && now-r.sealed[0].segment.EndMonoNS >= r.history {
-		r.evict(false)
+		r.dropRaw(false)
+	}
+	for len(r.rollups) > 0 && now >= r.rollups[0].segment.EndMonoNS && now-r.rollups[0].segment.EndMonoNS >= r.history {
+		r.dropRollup(false)
+	}
+	if r.rollupActive != nil && now >= r.rollupActive.segment.EndMonoNS && now-r.rollupActive.segment.EndMonoNS >= r.history {
+		r.dropRollup(false)
 	}
 	for r.bytes > r.max && len(r.sealed) > 0 {
-		r.evict(true)
+		r.compactOldest()
+	}
+	for r.bytes > r.max && r.hasRollup() {
+		r.dropRollup(true)
 	}
 }
-func (r *Recorder) evict(memory bool) {
+func (r *Recorder) dropRaw(memory bool) {
 	r.bytes -= r.sealed[0].bytes
 	r.sealed[0] = retained{}
 	r.sealed = r.sealed[1:]
@@ -85,11 +98,98 @@ func (r *Recorder) evict(memory bool) {
 		r.evictions++
 	}
 }
-func (r *Recorder) room(cost int64) bool {
+func (r *Recorder) room(cost int64, metric bool) bool {
 	for r.bytes+cost > r.max && len(r.sealed) > 0 {
-		r.evict(true)
+		r.compactOldest()
+	}
+	// Event detail must not displace retained aggregate evidence. A new metric
+	// may replace the oldest summary only when no raw history remains to fold.
+	for metric && r.bytes+cost > r.max && r.hasRollup() {
+		r.dropRollup(true)
 	}
 	return r.bytes+cost <= r.max
+}
+
+func (r *Recorder) hasRollup() bool { return len(r.rollups) > 0 || r.rollupActive != nil }
+
+func (r *Recorder) dropRollup(memory bool) {
+	if memory {
+		r.aggregateEvictions++
+	}
+	if len(r.rollups) > 0 {
+		r.bytes -= r.rollups[0].bytes
+		r.rollups[0] = retained{}
+		r.rollups = r.rollups[1:]
+		return
+	}
+	r.bytes -= r.rollupActive.bytes
+	r.rollupActive = nil
+}
+
+// Compact only under budget pressure. The oldest details go first; their
+// complete aggregate intervals remain available without a fixed hot-tier age.
+func (r *Recorder) compactOldest() {
+	old := r.sealed[0]
+	r.dropRaw(true)
+	if len(old.segment.Metrics) == 0 {
+		return
+	}
+	bucket := old.segment.StartMonoNS / uint64(config.RollupInterval)
+	if r.rollupActive != nil && bucket != r.rollupBucket {
+		r.rollups = append(r.rollups, *r.rollupActive)
+		r.rollupActive = nil
+	}
+	if r.rollupActive == nil {
+		r.rollupBucket = bucket
+		first := old.segment.Metrics[0]
+		r.rollupActive = &retained{segment: model.Segment{StartMonoNS: first.StartMonoNS, EndMonoNS: first.EndMonoNS}, bytes: segmentCost, minNS: first.StartMonoNS, maxNS: first.EndMonoNS}
+		r.bytes += segmentCost
+	}
+	for _, m := range old.segment.Metrics {
+		r.addRollupMetric(m)
+	}
+}
+
+func (r *Recorder) addRollupMetric(m model.Metric) {
+	a := r.rollupActive
+	a.observe(m.StartMonoNS, m.EndMonoNS)
+	a.segment.StartMonoNS = min(a.segment.StartMonoNS, m.StartMonoNS)
+	a.segment.EndMonoNS = max(a.segment.EndMonoNS, m.EndMonoNS)
+	for i := range a.segment.Metrics {
+		prev := &a.segment.Metrics[i]
+		if prev.Family != m.Family || prev.EndMonoNS != m.StartMonoNS {
+			continue
+		}
+		prev.EndMonoNS = m.EndMonoNS
+		for j, n := range m.Histogram {
+			prev.Histogram[j] += n
+		}
+		prev.Count += m.Count
+		prev.Anomalies += m.Anomalies
+		prev.Critical += m.Critical
+		prev.Bytes += m.Bytes
+		prev.Retransmits += m.Retransmits
+		prev.Resets += m.Resets
+		prev.BookkeepingCompletions += m.BookkeepingCompletions
+		prev.Loss.RingFailures += m.Loss.RingFailures
+		prev.Loss.Suppressed += m.Loss.Suppressed
+		prev.Loss.DetailFailures += m.Loss.DetailFailures
+		prev.Loss.TrackingFailures += m.Loss.TrackingFailures
+		prev.Loss.Unmatched += m.Loss.Unmatched
+		prev.Loss.DecodeFailures += m.Loss.DecodeFailures
+		return
+	}
+	ms := a.segment.Metrics
+	if len(ms) == cap(ms) {
+		capacity := max(4, cap(ms)*2)
+		next := make([]model.Metric, len(ms), capacity)
+		copy(next, ms)
+		ms = next
+		cost := int64(capacity-cap(a.segment.Metrics)) * int64(unsafe.Sizeof(model.Metric{}))
+		a.bytes += cost
+		r.bytes += cost
+	}
+	a.segment.Metrics = append(ms, m)
 }
 func stringCost(e model.Event) int64 {
 	return int64(len(e.Type) + len(e.Comm) + len(e.Operation) + len(e.SourceIP) + len(e.DestinationIP) + len(e.CgroupPath) + len(e.TCPDirection) + len(e.SocketContext) + len(e.EndpointSource))
@@ -112,7 +212,7 @@ func (r *Recorder) Event(e model.Event, now uint64) bool {
 		}
 		cost += int64(newCap-cap(es)) * int64(unsafe.Sizeof(model.Event{}))
 	}
-	if !r.room(cost) {
+	if !r.room(cost, false) {
 		r.drops++
 		return false
 	}
@@ -140,7 +240,7 @@ func (r *Recorder) Metric(m model.Metric, now uint64) bool {
 		}
 		cost += int64(newCap-cap(ms)) * int64(unsafe.Sizeof(model.Metric{}))
 	}
-	if !r.room(cost) {
+	if !r.room(cost, true) {
 		r.drops++
 		return false
 	}
@@ -157,11 +257,17 @@ func (r *Recorder) Metric(m model.Metric, now uint64) bool {
 	return true
 }
 func (r *Recorder) Health() model.Health {
-	from := r.active.segment.StartMonoNS
+	detailFrom := r.active.segment.StartMonoNS
 	if len(r.sealed) > 0 {
-		from = r.sealed[0].segment.StartMonoNS
+		detailFrom = r.sealed[0].segment.StartMonoNS
 	}
-	return model.Health{RetainedBytes: r.bytes, MaxBytes: r.max, RetainedFromNS: from, RecorderDrops: r.drops, EvictedSegments: r.evictions}
+	from := detailFrom
+	if len(r.rollups) > 0 {
+		from = min(from, r.rollups[0].minNS)
+	} else if r.rollupActive != nil {
+		from = min(from, r.rollupActive.minNS)
+	}
+	return model.Health{RetainedBytes: r.bytes, MaxBytes: r.max, RetainedFromNS: from, DetailedFromNS: detailFrom, RecorderDrops: r.drops, EvictedSegments: r.evictions, AggregateEvictions: r.aggregateEvictions}
 }
 func (r *Recorder) Snapshot(last time.Duration, now uint64, host model.Host, health model.Health, mode string) model.Capture {
 	r.Advance(now)
@@ -226,6 +332,24 @@ func (r *Recorder) SnapshotWindow(start, now uint64, host model.Host, health mod
 			}
 		}
 		c.Segments = append(c.Segments, out)
+	}
+	markAggregateOnly := func(before int) {
+		if len(c.Segments) == before {
+			return
+		}
+		for _, metric := range c.Segments[len(c.Segments)-1].Metrics {
+			c.Manifest.AggregateOnlyUntilNS = max(c.Manifest.AggregateOnlyUntilNS, metric.EndMonoNS)
+		}
+	}
+	for _, s := range r.rollups {
+		before := len(c.Segments)
+		add(s, true)
+		markAggregateOnly(before)
+	}
+	if r.rollupActive != nil {
+		before := len(c.Segments)
+		add(*r.rollupActive, false)
+		markAggregateOnly(before)
 	}
 	for _, s := range r.sealed[first:] {
 		add(s, true)

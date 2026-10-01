@@ -148,7 +148,7 @@ func TestStatusShowsPartialCoverageAndLifetimeCounters(t *testing.T) {
 		{
 			name:    "verbose diagnostics",
 			verbose: true,
-			want:    []string{"DIAGNOSTICS · SINCE DAEMON START", "Buffer rejected", "Start missing", "384 zero-byte logical WRITE completions", "Ingress detail drops", "Memory history evictions"},
+			want:    []string{"DIAGNOSTICS · SINCE DAEMON START", "Buffer rejected", "Start missing", "384 zero-byte logical WRITE completions", "Ingress detail drops", "Detailed segment compactions", "Aggregate history evictions"},
 			absent:  []string{"--verbose: lifetime counters"},
 		},
 	} {
@@ -176,6 +176,7 @@ func TestStatusShowsRetainedSpanWithoutClaimingCoverage(t *testing.T) {
 		Sensors:         []model.SensorHealth{{Name: "scheduler", State: "healthy"}},
 		RetainedFromNS:  uint64(time.Hour),
 		RetainedSpanNS:  uint64(2*time.Minute + 21*time.Second),
+		DetailedSpanNS:  uint64(40 * time.Second),
 		RetainedBytes:   31 << 20,
 		MaxBytes:        32 << 20,
 		EvictedSegments: 458,
@@ -185,7 +186,7 @@ func TestStatusShowsRetainedSpanWithoutClaimingCoverage(t *testing.T) {
 	if err := renderStatus(&out, h, settings, terminal.Theme{}, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"RECORDER ACTIVE", "Oldest retained segment: 2m21s ago", "history target 24h"} {
+	for _, want := range []string{"RECORDER ACTIVE", "Oldest retained segment: 2m21s ago", "history target 24h", "Individual event details retained for 40s", "older history contains aggregates"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("status omitted %q:\n%s", want, out.String())
 		}

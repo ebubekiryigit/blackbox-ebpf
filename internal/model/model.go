@@ -94,20 +94,23 @@ type SensorHealth struct {
 	Loss                   Counters `json:"loss"`
 }
 type Health struct {
-	AutoCapture      *AutoCaptureHealth  `json:"auto_capture,omitempty"`
-	ObservedAt       *time.Time          `json:"observed_at,omitempty"`
-	ClockChanges     uint64              `json:"clock_discontinuities,omitempty"`
-	LastClockChange  *ClockDiscontinuity `json:"last_clock_discontinuity,omitempty"`
-	Sensors          []SensorHealth      `json:"sensors"`
-	IngressDrops     uint64              `json:"ingress_drops"`
-	RecorderDrops    uint64              `json:"recorder_drops"`
-	EvictedSegments  uint64              `json:"memory_evicted_segments"`
-	MetadataFailures uint64              `json:"metadata_resolution_failures"`
-	SnapshotFailures uint64              `json:"snapshot_write_failures"`
-	RetainedBytes    int64               `json:"retained_bytes"`
-	MaxBytes         int64               `json:"max_bytes"`
-	RetainedFromNS   uint64              `json:"retained_from_ns"`
-	RetainedSpanNS   uint64              `json:"retained_span_ns"`
+	AutoCapture        *AutoCaptureHealth  `json:"auto_capture,omitempty"`
+	ObservedAt         *time.Time          `json:"observed_at,omitempty"`
+	ClockChanges       uint64              `json:"clock_discontinuities,omitempty"`
+	LastClockChange    *ClockDiscontinuity `json:"last_clock_discontinuity,omitempty"`
+	Sensors            []SensorHealth      `json:"sensors"`
+	IngressDrops       uint64              `json:"ingress_drops"`
+	RecorderDrops      uint64              `json:"recorder_drops"`
+	EvictedSegments    uint64              `json:"memory_evicted_segments"`
+	AggregateEvictions uint64              `json:"aggregate_evictions,omitempty"`
+	MetadataFailures   uint64              `json:"metadata_resolution_failures"`
+	SnapshotFailures   uint64              `json:"snapshot_write_failures"`
+	RetainedBytes      int64               `json:"retained_bytes"`
+	MaxBytes           int64               `json:"max_bytes"`
+	RetainedFromNS     uint64              `json:"retained_from_ns"`
+	RetainedSpanNS     uint64              `json:"retained_span_ns"`
+	DetailedFromNS     uint64              `json:"detailed_from_ns,omitempty"`
+	DetailedSpanNS     uint64              `json:"detailed_span_ns,omitempty"`
 }
 
 // ClockDiscontinuity records the latest detected change in the local
@@ -166,6 +169,7 @@ type RecordingSettings struct {
 
 type Manifest struct {
 	AutoIncident         *AutoIncident     `json:"auto_incident,omitempty"`
+	AggregateOnlyUntilNS uint64            `json:"aggregate_only_until_ns,omitempty"`
 	RecordingStartMonoNS uint64            `json:"recording_start_mono_ns,omitempty"`
 	Settings             RecordingSettings `json:"settings"`
 	FormatVersion        int               `json:"capture_format_version"`

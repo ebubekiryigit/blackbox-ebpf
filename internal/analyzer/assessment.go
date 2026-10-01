@@ -74,6 +74,9 @@ func assess(r Report) Assessment {
 		}
 	}
 	add := func(n CoverageReason) { a.Reasons = append(a.Reasons, n) }
+	if end := r.Manifest.AggregateOnlyUntilNS; end > r.Manifest.StartMonoNS {
+		add(CoverageReason{Code: "older_details_compacted", Severity: "warning", Scope: "window", Limited: true, Title: "Older event details were compacted", Explanation: "Aggregate counts and histograms remain available through the older part of this capture, but individual event details from that period were discarded to stay within the recorder memory budget.", Evidence: []EvidenceRef{{Kind: "manifest", Value: fmt.Sprintf("aggregate_only_until_ns=%d", end)}}})
+	}
 	if changes := r.Manifest.Health.ClockChanges; changes > 0 {
 		explanation := "This daemon-lifetime count does not imply missing observations. UTC timestamps are projected using the capture-time clock sample; timestamps preceding a clock step may be shifted."
 		if latest := r.Manifest.Health.LastClockChange; latest != nil {
