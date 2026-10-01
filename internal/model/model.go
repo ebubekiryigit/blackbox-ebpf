@@ -142,6 +142,7 @@ type RecordingSettings struct {
 	SchedulerTrackingEntries uint32   `json:"scheduler_tracking_entries,omitempty"`
 	RingBytes                uint32   `json:"ring_bytes,omitempty"`
 	HistoryNS                uint64   `json:"history_ns"`
+	// This existing archive field is the recorder's retained-byte budget, not RSS.
 	MaxMemory                int64    `json:"max_memory"`
 	BlockThresholdNS         uint64   `json:"block_threshold_ns"`
 	SchedulerThresholdNS     uint64   `json:"scheduler_threshold_ns"`

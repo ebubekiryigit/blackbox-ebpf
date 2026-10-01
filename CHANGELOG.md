@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Remove the misleading `max_memory` YAML/CLI setting. Recorder history keeps a
+  fixed 32 MiB accounting budget; existing configs must remove `max_memory`
+  before upgrade. This budget does not cap process RSS. The automatic storage
+  byte quota accepts values above 1 TiB; file-count and scan safety bounds remain.
 - Use BOOTTIME for kernel event timestamps and recorder windows while retaining
   MONOTONIC for block I/O and scheduler latency durations.
 - Detect significant local realtime-to-boottime offset changes without stopping

@@ -54,7 +54,7 @@ func TestAnalyzeColorModesAndUnchangedJSON(t *testing.T) {
 
 func TestConfigCommandsUseMergedTypedSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte("history: 2m\nmax_memory: 16MiB\nstrict: true\npoll_interval: 2s\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("history: 2m\nstrict: true\npoll_interval: 2s\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	execute := func(args ...string) (string, error) {
@@ -70,7 +70,7 @@ func TestConfigCommandsUseMergedTypedSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "history: 3m") || !strings.Contains(out, "max_memory: 16MiB") || !strings.Contains(out, "strict: false") {
+	if !strings.Contains(out, "history: 3m") || strings.Contains(out, "max_memory:") || !strings.Contains(out, "strict: false") {
 		t.Fatalf("wrong effective config:\n%s", out)
 	}
 	if _, err = execute("config", "check", "--config", path); err != nil {
@@ -88,7 +88,6 @@ func TestConfigShowRoundTripsEveryPublicSetting(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "input.yml")
 	content := `log_level: debug
 history: 2m
-max_memory: 64MiB
 sensors: [scheduler, oom]
 strict: true
 poll_interval: 2s

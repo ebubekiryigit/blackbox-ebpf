@@ -33,7 +33,7 @@ func TestConfigurationPrecedenceAndStrictParsing(t *testing.T) {
 		{name: "socket is CLI-only", yaml: "socket: /tmp/blackbox.sock", fail: true},
 		{name: "invalid boolean", yaml: "strict: yes", fail: true},
 		{name: "invalid integer", yaml: "thresholds:\n  block_io:\n    warn: 20", fail: true},
-		{name: "empty byte quantity", yaml: "max_memory: ''", fail: true},
+		{name: "removed recorder memory setting", yaml: "max_memory: 32MiB", fail: true},
 		{name: "anchors", yaml: "history: &h 2m", fail: true},
 		{name: "semantic value may be overridden", yaml: "history: 0s", flag: "3m", history: 3 * time.Minute},
 		{name: "semantic failure", yaml: "history: 0s", fail: true},
@@ -73,7 +73,7 @@ func TestConfigurationPrecedenceAndStrictParsing(t *testing.T) {
 }
 func TestExplicitFalseAndNestedFlags(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte("strict: true\nmax_memory: 16MiB\nsensors: [tcp]\nthresholds:\n  block_io:\n    warn: 42ms\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("strict: true\nsensors: [tcp]\nthresholds:\n  block_io:\n    warn: 42ms\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -87,7 +87,7 @@ func TestExplicitFalseAndNestedFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Strict || c.MaxMemory != 16<<20 || c.BlockThreshold != 50*time.Millisecond || !reflect.DeepEqual(c.Enabled, []string{"tcp"}) {
+	if c.Strict || c.RecorderBudgetBytes != RecorderBudgetBytes || c.BlockThreshold != 50*time.Millisecond || !reflect.DeepEqual(c.Enabled, []string{"tcp"}) {
 		t.Fatalf("wrong merge: %+v", c)
 	}
 }
@@ -96,7 +96,6 @@ func TestYAMLRoundTripAndLocalIsolation(t *testing.T) {
 	c := Default()
 	c.LogLevel = "debug"
 	c.History = 2 * time.Minute
-	c.MaxMemory = 64 << 20
 	c.Enabled = []string{"scheduler", "oom"}
 	c.Strict = true
 	c.Resources.PollInterval = 2 * time.Second

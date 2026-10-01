@@ -47,7 +47,6 @@ blackbox capture
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
 | `--duration` | `30s` | new recording window (sets retained history for this run) |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
-| `--max-memory` | `32MiB` | Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB). Total process memory also includes queues, Go runtime and snapshot work; kernel maps are separate. |
 | `--output, -o` | `` | destination (default: generated in the current directory; must not exist) |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
@@ -77,8 +76,8 @@ blackbox config check
 | `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
 | `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
 | `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
-| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
-| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Bounds directory scan/sort work; manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
@@ -86,7 +85,6 @@ blackbox config check
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
 | `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
-| `--max-memory` | `32MiB` | Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB). Total process memory also includes queues, Go runtime and snapshot work; kernel maps are separate. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
 | `--scheduler-warn` | `20ms` | Slow runnable wait threshold. Example: 20ms. |
@@ -108,8 +106,8 @@ blackbox config show
 | `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
 | `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
 | `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
-| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
-| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Bounds directory scan/sort work; manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
@@ -117,7 +115,6 @@ blackbox config show
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
 | `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
-| `--max-memory` | `32MiB` | Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB). Total process memory also includes queues, Go runtime and snapshot work; kernel maps are separate. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
 | `--scheduler-warn` | `20ms` | Slow runnable wait threshold. Example: 20ms. |
@@ -139,8 +136,8 @@ blackbox daemon
 | `--auto-capture-before` | `1m` | Requested history before first detection: 1s–24h. If history is shorter, coverage is partial. |
 | `--auto-capture-directory` | `/var/lib/blackbox/captures/auto` | Private absolute directory for automatic files. Oldest automatic files rotate within both limits. |
 | `--auto-capture-enabled` | `true` | true: save incidents automatically; false: manual snapshots only. |
-| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Manual captures are not rotated. |
-| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
+| `--auto-capture-max-files` | `1000` | Maximum published automatic files: 1–10000. Bounds directory scan/sort work; manual captures are not rotated. |
+| `--auto-capture-max-storage` | `1GiB` | Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space. |
 | `--auto-capture-sensors` | `[block_io,scheduler,oom]` | Trigger sources: block_io, scheduler (critical latency), oom (victim count). Only enabled, available recording sensors participate. TCP is not supported. |
 | `--auto-capture-write-timeout` | `2m` | Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests. |
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
@@ -148,7 +145,6 @@ blackbox daemon
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
 | `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
-| `--max-memory` | `32MiB` | Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB). Total process memory also includes queues, Go runtime and snapshot work; kernel maps are separate. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
 | `--scheduler-warn` | `20ms` | Slow runnable wait threshold. Example: 20ms. |

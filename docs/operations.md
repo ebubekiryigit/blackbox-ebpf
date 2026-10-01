@@ -157,11 +157,15 @@ kernel are not forcibly interrupted by the userspace timeout.
 
 The default budget is 1000 files or 1 GiB, equivalent to 1.024 MiB per file if
 both limits are reached together. Actual sizes vary with detail volume, window
-length and compression, so the byte limit may rotate files sooner. Keep
+length and compression, so the byte limit may rotate files sooner. `max_storage`
+has no arbitrary 1 TiB ceiling; it must be at least 1 MiB and fit a signed
+64-bit byte count. Larger values may be operationally inert: the file-count
+ceiling and per-file encoded limit also apply.
+The 10,000-file ceiling remains because each publication scans directory entries,
+stores matching file metadata, and sorts those files. The scan stops after
+20,000 entries, including unmanaged files, to bound that work. Keep
 `max_storage` proportional to `max_files` when changing either limit, and monitor
-actual file sizes on the target host. The safety bounds allow at most 10,000 files
-or 1 TiB, about 105 MiB per file if both maxima are selected. The directory scan stops after
-20,000 entries, counting unmanaged files too. While a manual writer holds the
+actual file sizes on the target host. While a manual writer holds the
 snapshot lease, automatic selection retries every 100 ms without rereading sensors
 or scanning the disk. The 64 MiB free-space reserve applies to staging as well as
 publication and does not protect against concurrent external writes.
@@ -210,12 +214,22 @@ retransmissions/resets, and OOM victims. Each sensor has a bounded, shared detai
 quota across CPUs; OOM is exempt. Aggregate counters still include
 observations whose details were suppressed.
 
-`max_memory` bounds retained recorder data, including backing buffer
-capacity. It is **not an RSS limit**. BPF maps/rings, ingress, metadata cache, Go
-runtime and snapshot compression add memory. One in-flight snapshot may keep
-otherwise evicted segments alive until writing finishes. Status exposes BPF memory
-estimates when the kernel supplies them. High load may shorten retained history
-or drop details; inspect counters alongside the report.
+The fixed 32 MiB recorder budget covers retained observation accounting,
+including backing buffer capacity; it is **not an RSS limit**. BPF maps/rings,
+ingress, metadata cache, Go runtime, capture encoding, and readback validation
+add memory. One in-flight snapshot may keep otherwise evicted segments alive
+until writing finishes. The 256 MiB decoded `.bbx` limit bounds archive bytes,
+not the RSS of `analyze`. Status exposes BPF memory estimates when the kernel
+supplies them. High load may shorten retained history or drop details; inspect
+counters alongside the report.
+
+For deployment sizing, measure daemon peak RSS from `/proc/<pid>/status`
+(`VmHWM`) during representative recording and snapshot load. Measure offline
+`analyze` separately with `/usr/bin/time -v`; capture size on disk alone does
+not predict decoded memory. Leave headroom for one snapshot and the kernel BPF
+allocation shown by `status --verbose`. See the
+[budget table](configuration.md#internal-resource-budgets) for exactly what each
+fixed limit covers.
 
 All operator settings and CLI parameters are in the generated [CLI reference](cli.md)
 and [example config](../config.example.yml). See [configuration](configuration.md)

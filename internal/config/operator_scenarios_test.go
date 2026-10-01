@@ -32,7 +32,6 @@ func TestOperatorProfilesKeepCombinedSettingsAndExplicitOverrides(t *testing.T) 
 			name: "bare metal with longer automatic persistence",
 			yaml: `log_level: warn
 history: 15m
-max_memory: 64MiB
 sensors: [block_io, scheduler, tcp, oom]
 strict: true
 poll_interval: 2s
@@ -53,7 +52,7 @@ auto_capture:
 `,
 			flags: map[string]string{"history": "20m", "strict": "false"},
 			check: func(t *testing.T, c Config) {
-				if c.LogLevel != "warn" || c.History != 20*time.Minute || c.Strict || c.MaxMemory != 64<<20 || c.Resources.PollInterval != 2*time.Second || c.Control.Timeout != 20*time.Second || c.Control.QueryTimeout != 20*time.Second || c.AutoCapture.Before != 2*time.Minute || c.AutoCapture.After != 15*time.Second || c.AutoCapture.MaxFiles != 250 || c.AutoCapture.MaxStorage != 2<<30 || c.AutoCapture.WriteTimeout != 5*time.Minute || c.BlockThreshold != 75*time.Millisecond || c.BlockCritical != 300*time.Millisecond || c.SchedulerThreshold != 30*time.Millisecond || c.SchedulerCritical != 150*time.Millisecond {
+				if c.LogLevel != "warn" || c.History != 20*time.Minute || c.Strict || c.RecorderBudgetBytes != RecorderBudgetBytes || c.Resources.PollInterval != 2*time.Second || c.Control.Timeout != 20*time.Second || c.Control.QueryTimeout != 20*time.Second || c.AutoCapture.Before != 2*time.Minute || c.AutoCapture.After != 15*time.Second || c.AutoCapture.MaxFiles != 250 || c.AutoCapture.MaxStorage != 2<<30 || c.AutoCapture.WriteTimeout != 5*time.Minute || c.BlockThreshold != 75*time.Millisecond || c.BlockCritical != 300*time.Millisecond || c.SchedulerThreshold != 30*time.Millisecond || c.SchedulerCritical != 150*time.Millisecond {
 					t.Fatalf("combined bare-metal settings changed: %+v", c)
 				}
 			},
@@ -61,7 +60,6 @@ auto_capture:
 		{
 			name: "small host with partial automatic history",
 			yaml: `history: 30s
-max_memory: 8MiB
 sensors: [tcp, oom]
 poll_interval: 1s
 auto_capture:

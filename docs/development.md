@@ -63,6 +63,12 @@ production CPU. Compare repeated runs on the same hardware. Report workload,
 CPU/RSS, map memory, snapshot latency, retained coverage and drops together before
 making overhead claims.
 
+`TestFullRecorderBudgetFitsDefaultCapture` fills the fixed 32 MiB recorder
+budget with escape-heavy events and checks that its snapshot writes within the
+256 MiB decoded `.bbx` limit. Keep this test aligned when changing event fields,
+recorder accounting or archive budgets. It protects the default relationship,
+but it is not a process RSS guarantee or a substitute for Linux workload sizing.
+
 ### Capture decoder baseline (2026-09-26)
 
 `BenchmarkCaptureDecode` in `internal/capture/capture_bench_test.go` decodes one

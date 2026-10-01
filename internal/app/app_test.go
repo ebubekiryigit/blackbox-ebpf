@@ -388,7 +388,7 @@ func TestIngressOverloadLogsOnceAndRemainsVisible(t *testing.T) {
 func TestRecorderOverloadLogsOnceAndRemainsVisible(t *testing.T) {
 	c := config.Default()
 	// A segment alone consumes this budget, so every observation is rejected.
-	c.MaxMemory = 512
+	c.RecorderBudgetBytes = 512
 	c.Resources.IngressEvents = 128
 	var logs bytes.Buffer
 	e := &Engine{Config: c, logger: slog.New(slog.NewTextHandler(&logs, nil)), sensors: []sensor.Sensor{&burstSensor{}}, ingress: make(chan model.Event, c.Resources.IngressEvents), Queries: make(chan Query, 1), clock: func() (uint64, error) { return uint64(time.Second), nil }}

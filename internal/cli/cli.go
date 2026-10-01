@@ -61,7 +61,7 @@ func New() *cobra.Command {
 		server := make(chan error, 1)
 		go func() { run <- e.Run(ctx) }()
 		go func() { server <- control.Serve(ctx, c.Socket, e) }()
-		logger.Info("recorder starting", "history", c.History, "max_memory", c.MaxMemory, "strict", c.Strict, "socket", c.Socket)
+		logger.Info("recorder starting", "history", c.History, "recorder_budget_bytes", c.RecorderBudgetBytes, "strict", c.Strict, "socket", c.Socket)
 		select {
 		case er = <-run:
 			cancel()

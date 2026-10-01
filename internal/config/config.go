@@ -13,22 +13,22 @@ import (
 )
 
 type Config struct {
-	LogLevel           string
-	History            time.Duration
-	MaxMemory          int64
-	Socket             string
-	BlockThreshold     time.Duration
-	SchedulerThreshold time.Duration
-	BlockCritical      time.Duration
-	SchedulerCritical  time.Duration
-	DetailRate         uint32
-	Strict             bool
-	Enabled            []string
-	Resources          Resources
-	Control            Control
-	Capture            CaptureLimits
-	Report             Report
-	AutoCapture        AutoCapture
+	LogLevel            string
+	History             time.Duration
+	RecorderBudgetBytes int64
+	Socket              string
+	BlockThreshold      time.Duration
+	SchedulerThreshold  time.Duration
+	BlockCritical       time.Duration
+	SchedulerCritical   time.Duration
+	DetailRate          uint32
+	Strict              bool
+	Enabled             []string
+	Resources           Resources
+	Control             Control
+	Capture             CaptureLimits
+	Report              Report
+	AutoCapture         AutoCapture
 }
 
 func (c Config) Validate() error {
@@ -40,8 +40,8 @@ func (c Config) Validate() error {
 	if c.History < MinHistory || c.History > MaxHistory {
 		return fmt.Errorf("history must be between %s and %s", MinHistory, MaxHistory)
 	}
-	if c.MaxMemory < MinMemory || c.MaxMemory > MaxMemory {
-		return fmt.Errorf("max-memory must be between %s and %s", MemoryText(MinMemory), MemoryText(MaxMemory))
+	if c.RecorderBudgetBytes != RecorderBudgetBytes {
+		return fmt.Errorf("internal recorder budget must be %s", MemoryText(RecorderBudgetBytes))
 	}
 	if !path.IsAbs(c.Socket) || strings.ContainsRune(c.Socket, 0) || len(c.Socket) > MaxSocketBytes {
 		return fmt.Errorf("socket must be an absolute Unix path of at most %d bytes", MaxSocketBytes)
@@ -118,8 +118,11 @@ func (a AutoCapture) Validate() error {
 	if a.Before < MinHistory || a.Before > MaxHistory || a.After < 0 || a.After > MaxHistory {
 		return fmt.Errorf("auto_capture.before must be 1s–24h and after must be 0s–24h")
 	}
-	if a.MaxFiles < 1 || a.MaxFiles > MaxAutoFiles || a.MaxStorage < MinMemory || a.MaxStorage > MaxAutoStorage {
-		return fmt.Errorf("auto_capture requires max_files between 1 and %d and max_storage between 1MiB and 1TiB", MaxAutoFiles)
+	if a.MaxFiles < 1 || a.MaxFiles > MaxAutoFiles {
+		return fmt.Errorf("auto_capture.max_files must be between 1 and %d (directory scan safety limit)", MaxAutoFiles)
+	}
+	if a.MaxStorage < MinMemory {
+		return fmt.Errorf("auto_capture.max_storage must be at least %s", MemoryText(MinMemory))
 	}
 	if a.WriteTimeout < MinAutoWriteTimeout || a.WriteTimeout > MaxAutoWriteTimeout {
 		return fmt.Errorf("auto_capture.write_timeout must be between %s and %s", MinAutoWriteTimeout, MaxAutoWriteTimeout)

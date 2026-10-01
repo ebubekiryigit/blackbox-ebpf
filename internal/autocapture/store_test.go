@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,6 +96,17 @@ func TestStorageRotatesOldestWithinBothLimitsAndSurvivesRestart(t *testing.T) {
 				t.Fatal("manual capture modified")
 			}
 		})
+	}
+}
+
+func TestRotationStorageArithmeticDoesNotOverflow(t *testing.T) {
+	limits := config.Default().AutoCapture
+	limits.MaxStorage = math.MaxInt64
+	if _, _, err := rotate(nil, nil, nil, math.MaxInt64-2, 2, 0, limits); err != nil {
+		t.Fatalf("exact byte budget rejected: %v", err)
+	}
+	if _, _, err := rotate(nil, nil, nil, math.MaxInt64-2, 3, 0, limits); err == nil {
+		t.Fatal("overflowing byte budget accepted")
 	}
 }
 

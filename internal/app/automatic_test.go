@@ -390,7 +390,7 @@ func TestAutomaticSelectionHoldsManualSnapshotLease(t *testing.T) {
 	e := &Engine{Config: cfg}
 	a := &automatic{controller: autocapture.New(cfg, model.Families), engine: e, timer: time.NewTimer(time.Hour), jobs: make(chan autoJob, 1)}
 	defer a.timer.Stop()
-	r := recorder.New(cfg.History, cfg.MaxMemory, uint64(time.Second))
+	r := recorder.New(cfg.History, cfg.RecorderBudgetBytes, uint64(time.Second))
 	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
 	end, ok := a.controller.Deadline()
 	if !ok {
@@ -415,7 +415,7 @@ func TestAutomaticSelectionKeepsCurrentClockSampleAndDiagnostic(t *testing.T) {
 	e := &Engine{Config: cfg}
 	a := &automatic{controller: autocapture.New(cfg, model.Families), engine: e, timer: time.NewTimer(time.Hour), jobs: make(chan autoJob, 1)}
 	defer a.timer.Stop()
-	r := recorder.New(cfg.History, cfg.MaxMemory, uint64(time.Second))
+	r := recorder.New(cfg.History, cfg.RecorderBudgetBytes, uint64(time.Second))
 	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
 	end, ok := a.controller.Deadline()
 	if !ok {
@@ -437,7 +437,7 @@ func TestAutomaticWaitsForWriterAndPendingShutdown(t *testing.T) {
 	cfg.Control.Timeout = time.Second
 	e := &Engine{Config: cfg}
 	a := newAutomatic(context.Background(), e, model.Families)
-	r := recorder.New(cfg.History, cfg.MaxMemory, uint64(time.Second))
+	r := recorder.New(cfg.History, cfg.RecorderBudgetBytes, uint64(time.Second))
 	host := model.Host{ClockSource: "boottime", AnchorMonoNS: uint64(time.Second), AnchorWall: time.Date(2026, 9, 28, 7, 0, 0, 0, time.UTC)}
 	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
 	end, _ := a.controller.Deadline()

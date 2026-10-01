@@ -42,8 +42,9 @@ unknown and duplicate keys, multiple documents, malformed
 types, anchors, aliases, merge keys, and null values. A malformed value cannot be
 rescued by a CLI override.
 
-Durations use Go syntax such as `250ms`, `30s`, `2m`, or `1h`. `max_memory` uses a
-whole binary quantity such as `16MiB` or `1GiB`. Booleans must be `true` or `false`.
+Durations use Go syntax such as `250ms`, `30s`, `2m`, or `1h`.
+`auto_capture.max_storage` uses a whole binary quantity such as `16MiB` or
+`1GiB`. Booleans must be `true` or `false`.
 Sensors must be a YAML sequence containing one or more unique values from
 `block_io`, `scheduler`, `tcp`, and `oom`.
 
@@ -53,7 +54,6 @@ Sensors must be a YAML sequence containing one or more unique values from
 | --- | --- |
 | `log_level` | Daemon stderr verbosity: `debug`, `info`, `warn`, or `error` |
 | `history` | Rolling daemon retention from 1 second to 24 hours |
-| `max_memory` | Retained recorder-data budget from 1 MiB to 1 GiB |
 | `sensors` | Enabled signal families |
 | `strict` | Stop if any enabled sensor cannot initialize or fails permanently |
 | `poll_interval` | Aggregate collection interval from 100 ms to 1 minute, no longer than history |
@@ -64,8 +64,8 @@ Sensors must be a YAML sequence containing one or more unique values from
 | `auto_capture.directory` | Private absolute output directory; `/var/lib/blackbox/captures/auto` in native and Compose deployments |
 | `auto_capture.sensors` | Trigger sources: `block_io`, `scheduler`, `oom`; intersected with available recording sensors |
 | `auto_capture.before` / `after` | Requested lookback and fixed post-window; defaults 1 minute / 10 seconds. Consecutive saved files avoid repeating the lookback. |
-| `auto_capture.max_files` | Maximum published automatic files, 1–10,000; default 1000 |
-| `auto_capture.max_storage` | Published automatic file bytes, 1 MiB–1 TiB; default 1 GiB. Staging briefly needs extra disk space. |
+| `auto_capture.max_files` | Maximum published automatic files, 1–10,000; default 1000. This bounds directory scan/sort work and metadata memory per write. |
+| `auto_capture.max_storage` | Published automatic file bytes, at least 1 MiB; default 1 GiB. Staging briefly needs extra disk space. |
 | `auto_capture.write_timeout` | Deadline for writing and validating one automatic incident, 1 second–10 minutes; default 2 minutes |
 
 Automatic capture settings apply to `daemon`, not standalone `capture`. They are
@@ -93,11 +93,33 @@ server-side work. A control request ends at the earlier of the daemon deadline a
 the client's `--timeout` deadline. Automatic incident persistence uses its own
 `auto_capture.write_timeout` and does not inherit this control deadline.
 
-`max_memory` covers recorder backing capacity and retained strings. It excludes BPF
-maps and rings, queues, process metadata, Go runtime, and compression workspace.
+## Internal resource budgets
+
+The recorder has a fixed 32 MiB retained-history accounting budget. It covers
+event/metric backing capacity, retained string lengths, and segment bookkeeping.
+It does not bound process RSS.
+Status and captures expose the actual retained bytes, budget, evictions, and
+drops. Under load, the retained window may become shorter than `history`.
 When any bounded stage overloads, lifetime counters expose dropped or suppressed
-details. The daemon logs the first userspace overload and reports exact totals in
-status and captures.
+details; the daemon logs the first userspace overload.
+
+| Internal budget | Default | What it bounds |
+| --- | ---: | --- |
+| Recorder history accounting | 32 MiB | Retained observation backing and strings, not RSS |
+| Decoded `.bbx` archive | 256 MiB | JSON/tar bytes after decompression, not decoder RSS |
+| `.bbx` archive entries | 100,000 | Manifest, host, segments, completion marker |
+| Encoded capture transport | 512 MiB | One compressed control/automatic capture file |
+
+These limits apply at different stages; adding them does not produce a process
+memory ceiling. During a snapshot, sealed recorder segments can remain alive
+while new history is recorded, and encoding or readback validation allocates
+additional memory. Offline analysis also builds decoded events and a report.
+BPF maps/rings consume kernel memory separately. There is no reliable RSS range
+from `history` or `.bbx` size alone: workload mix, string lengths, compression,
+and the Go runtime matter. Measure peak RSS and BPF allocation on the target
+Linux host with a representative workload before sizing a container memory limit.
+`history` is a time target, not a promise that all of that history fits the
+recorder budget. See [resource monitoring](operations.md#resources).
 
 Settings are read at process startup. Validate changes before restarting. A daemon
 restart loses unsaved history.

@@ -6,9 +6,6 @@
 log_level: info
 # Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.
 history: 5m
-# Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB).
-# Total process memory also includes queues, Go runtime and snapshot work; kernel maps are separate.
-max_memory: 32MiB
 # Enabled sensors: block_io, scheduler, tcp, oom. Choose one or more; no duplicates.
 sensors:
   - block_io
@@ -54,9 +51,9 @@ auto_capture:
   before: 1m
   # Post-detection window: 0s–24h. Triggers in the first window do not extend it.
   after: 10s
-  # Maximum published automatic files: 1–10000. Manual captures are not rotated.
+  # Maximum published automatic files: 1–10000. Bounds directory scan/sort work; manual captures are not rotated.
   max_files: 1000
-  # Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.
+  # Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.
   max_storage: 1GiB
   # Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests.
   write_timeout: 2m

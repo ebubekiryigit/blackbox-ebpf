@@ -10,11 +10,13 @@ import (
 // Only settings in settings.go are operator configuration. Implementation budgets
 // remain here so contributors can change them in one place.
 const (
-	MaxConfigBytes                  = 1 << 20
-	MinHistory                      = time.Second
-	MaxHistory                      = 24 * time.Hour
-	MinMemory                 int64 = 1 << 20
-	MaxMemory                 int64 = 1 << 30
+	MaxConfigBytes       = 1 << 20
+	MinHistory           = time.Second
+	MaxHistory           = 24 * time.Hour
+	MinMemory      int64 = 1 << 20
+	// RecorderBudgetBytes caps retained history accounting, not process RSS.
+	// Keep it below the decoded archive budget; snapshots also need working memory.
+	RecorderBudgetBytes       int64 = 32 << 20
 	MaxDetailRate                   = 10000
 	MaxQueueEntries                 = 1 << 20
 	MaxTrackingEntries              = 1 << 20
@@ -38,11 +40,12 @@ const (
 	MaxAutoWriteTimeout             = 10 * time.Minute
 	DefaultCaptureDuration          = 30 * time.Second
 	DefaultDemoOutput               = "demo.bbx"
-	MaxAutoFiles                    = 10000
-	MaxAutoStorage            int64 = 1 << 40
-	AutoDirectoryEntries            = 20000
-	AutoRetryInterval               = 100 * time.Millisecond
-	AutoMinFreeBytes          int64 = 64 << 20
+	// Automatic rotation scans and sorts the managed directory on each write.
+	// This cap bounds per-write work even if the byte budget holds tiny files.
+	MaxAutoFiles               = 10000
+	AutoDirectoryEntries       = 2 * MaxAutoFiles
+	AutoRetryInterval          = 100 * time.Millisecond
+	AutoMinFreeBytes     int64 = 64 << 20
 )
 
 type AutoCapture struct {
@@ -91,7 +94,7 @@ type Report struct {
 func Default() Config {
 	return Config{
 		LogLevel: "info",
-		History:  5 * time.Minute, MaxMemory: 32 << 20, Socket: "/run/blackbox/blackbox.sock",
+		History:  5 * time.Minute, RecorderBudgetBytes: RecorderBudgetBytes, Socket: "/run/blackbox/blackbox.sock",
 		BlockThreshold: 50 * time.Millisecond, SchedulerThreshold: 20 * time.Millisecond,
 		BlockCritical: 250 * time.Millisecond, SchedulerCritical: 100 * time.Millisecond,
 		DetailRate: 256, Enabled: append([]string(nil), model.Families...),

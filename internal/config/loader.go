@@ -125,11 +125,6 @@ func strictYAML(b []byte) (map[string]any, error) {
 	if err := node.Decode(&values); err != nil {
 		return nil, err
 	}
-	if memory, present := values["max_memory"]; present {
-		if _, err := Memory(memory.(string)); err != nil {
-			return nil, err
-		}
-	}
 	return values, nil
 }
 

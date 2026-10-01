@@ -164,7 +164,7 @@ path to stdout. Diagnostics use stderr, which keeps shell pipelines predictable.
 
 ## Configuration
 
-The operator surface covers log level, retained history and memory, enabled
+The operator surface covers log level, retained history, enabled
 sensors, failure policy, polling/control timing, block I/O and scheduler latency
 thresholds, and automatic capture timing/storage. The commented
 [config.example.yml](config.example.yml) lists every accepted value.

@@ -25,6 +25,16 @@ after a successful publication. Trigger detection and post-window timing are
 unchanged; the selected windows may overlap by one aggregate interval to preserve
 trigger evidence.
 
+The next release removes the `max_memory` YAML key and `--max-memory` flag.
+The name implied a total process memory cap, but it only controlled recorder
+history accounting and could exceed the `.bbx` decoded archive budget. Remove
+the key from existing config files before upgrading; strict parsing rejects it.
+The recorder now uses a fixed 32 MiB accounting budget, so hosts previously
+configured above that value may retain less history. Inspect `status` for
+retained coverage, evictions, and drops. `auto_capture.max_storage` no longer
+has a 1 TiB ceiling; the default stays 1 GiB and `max_files` still bounds the
+per-write directory scan/sort work.
+
 The `.bbx` container is a checksummed zstd-compressed tar with a manifest, host
 metadata, ordered JSON segments, and a completion marker. Readers bound decoded
 bytes, archive entries, zstd memory, and observation timestamps before accepting
@@ -44,9 +54,10 @@ cannot be inferred from guest timestamps alone.
 
 Restart the daemon to load the new BPF objects and BOOTTIME timestamp source;
 save any in-memory history you need first. Preserve old `.bbx` files and the
-binary that wrote them if their UTC interpretation matters. Configuration and
-control socket contracts are unchanged. Verify new captures with the new
-analyzer before retiring the previous binary.
+binary that wrote them if their UTC interpretation matters. Remove
+`max_memory` from YAML and startup flags before restarting; other
+configuration and control socket contracts are unchanged. Verify new captures
+with the new analyzer before retiring the previous binary.
 
 ## Upgrade from v0.1.0
 

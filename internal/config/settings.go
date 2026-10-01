@@ -14,7 +14,6 @@ import (
 type fileConfig struct {
 	LogLevel     string        `yaml:"log_level" mapstructure:"log_level"`
 	History      time.Duration `yaml:"history" mapstructure:"history"`
-	MaxMemory    string        `yaml:"max_memory" mapstructure:"max_memory"`
 	Sensors      []string      `yaml:"sensors" mapstructure:"sensors"`
 	Strict       bool          `yaml:"strict" mapstructure:"strict"`
 	PollInterval time.Duration `yaml:"poll_interval" mapstructure:"poll_interval"`
@@ -49,8 +48,8 @@ type latencyLevels struct {
 func operatorSettings(c Config) fileConfig {
 	return fileConfig{
 		LogLevel: c.LogLevel, History: c.History,
-		MaxMemory: MemoryText(c.MaxMemory), Sensors: append([]string(nil), c.Enabled...),
-		Strict: c.Strict, PollInterval: c.Resources.PollInterval,
+		Sensors: append([]string(nil), c.Enabled...),
+		Strict:  c.Strict, PollInterval: c.Resources.PollInterval,
 		Timeout: c.Control.Timeout, Socket: c.Socket,
 		Thresholds:  thresholds{latencyLevels{c.BlockThreshold, c.BlockCritical}, latencyLevels{c.SchedulerThreshold, c.SchedulerCritical}},
 		AutoCapture: autoCaptureSettings{Enabled: c.AutoCapture.Enabled, Directory: c.AutoCapture.Directory, Sensors: append([]string(nil), c.AutoCapture.Sensors...), Before: c.AutoCapture.Before, After: c.AutoCapture.After, MaxFiles: c.AutoCapture.MaxFiles, MaxStorage: MemoryText(c.AutoCapture.MaxStorage), WriteTimeout: c.AutoCapture.WriteTimeout},
@@ -59,11 +58,7 @@ func operatorSettings(c Config) fileConfig {
 
 func (s fileConfig) runtime() (Config, error) {
 	c := Default()
-	memory, err := Memory(s.MaxMemory)
-	if err != nil {
-		return Config{}, err
-	}
-	c.LogLevel, c.History, c.MaxMemory = s.LogLevel, s.History, memory
+	c.LogLevel, c.History = s.LogLevel, s.History
 	c.Enabled, c.Strict, c.Socket = append([]string(nil), s.Sensors...), s.Strict, s.Socket
 	c.Resources.PollInterval = s.PollInterval
 	c.Control.Timeout = s.Timeout
@@ -164,12 +159,11 @@ var settingHelp = map[string]string{
 	"auto_capture.sensors":          "Trigger sources: block_io, scheduler (critical latency), oom (victim count).\nOnly enabled, available recording sensors participate. TCP is not supported.",
 	"auto_capture.before":           "Requested history before first detection: 1s–24h. If history is shorter, coverage is partial.",
 	"auto_capture.after":            "Post-detection window: 0s–24h. Triggers in the first window do not extend it.",
-	"auto_capture.max_files":        "Maximum published automatic files: 1–10000. Manual captures are not rotated.",
-	"auto_capture.max_storage":      "Published automatic file budget: 1MiB–1TiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.",
+	"auto_capture.max_files":        "Maximum published automatic files: 1–10000. Bounds directory scan/sort work; manual captures are not rotated.",
+	"auto_capture.max_storage":      "Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.",
 	"auto_capture.write_timeout":    "Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests.",
 	"log_level":                     "Daemon log verbosity: debug, info, warn, error. Logs go to stderr.",
 	"history":                       "Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.",
-	"max_memory":                    "Retained history budget: 1MiB–1GiB (B, KiB, MiB, GiB).\nTotal process memory also includes queues, Go runtime and snapshot work; kernel maps are separate.",
 	"sensors":                       "Enabled sensors: block_io, scheduler, tcp, oom. Choose one or more; no duplicates.",
 	"strict":                        "false: continue with available sensors and report missing coverage.\ntrue: fail startup or stop recording if any enabled sensor fails permanently.",
 	"poll_interval":                 "How often to collect sensor totals: 100ms–1m, no longer than history.\nShorter intervals improve time resolution and increase polling work.",

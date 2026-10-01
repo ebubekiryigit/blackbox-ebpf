@@ -22,7 +22,7 @@ func TestInvalidResourceBudgets(t *testing.T) {
 		mutate func(*Config)
 	}{
 		{"history", func(c *Config) { c.History = 0 }}, {"relative socket", func(c *Config) { c.Socket = "local.sock" }},
-		{"memory", func(c *Config) { c.MaxMemory = MaxMemory + 1 }}, {"duplicate sensor", func(c *Config) { c.Enabled = []string{"tcp", "tcp"} }},
+		{"recorder budget", func(c *Config) { c.RecorderBudgetBytes++ }}, {"duplicate sensor", func(c *Config) { c.Enabled = []string{"tcp", "tcp"} }},
 		{"empty sensor", func(c *Config) { c.Enabled = nil }}, {"ingress", func(c *Config) { c.Resources.IngressEvents = 0 }},
 		{"metadata path", func(c *Config) { c.Resources.MetadataPathBytes = MaxMetadataPathBytes + 1 }},
 		{"ring", func(c *Config) { c.Resources.RingBytes = MinRingBytes + 1 }}, {"tracking", func(c *Config) { c.Resources.BlockTrackingEntries = 0 }},

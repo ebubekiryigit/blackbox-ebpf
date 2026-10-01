@@ -29,7 +29,6 @@ var publicSettingCases = []settingCase{
 	{"auto_capture.write_timeout", "3m", "auto-capture-write-timeout", "4m", func(c Config) any { return c.AutoCapture.WriteTimeout }, 3 * time.Minute, 4 * time.Minute},
 	{"log_level", "debug", "log-level", "error", func(c Config) any { return c.LogLevel }, "debug", "error"},
 	{"history", "2m", "history", "3m", func(c Config) any { return c.History }, 2 * time.Minute, 3 * time.Minute},
-	{"max_memory", "16MiB", "max-memory", "64MiB", func(c Config) any { return c.MaxMemory }, int64(16 << 20), int64(64 << 20)},
 	{"sensors", "[tcp]", "sensors", "scheduler,oom", func(c Config) any { return c.Enabled }, []string{"tcp"}, []string{"scheduler", "oom"}},
 	{"strict", "true", "strict", "false", func(c Config) any { return c.Strict }, true, false},
 	{"poll_interval", "2s", "poll-interval", "3s", func(c Config) any { return c.Resources.PollInterval }, 2 * time.Second, 3 * time.Second},
@@ -106,7 +105,7 @@ func TestPublicSettingBoundaries(t *testing.T) {
 	}{
 		{"log minimum surface", "log_level: debug", true}, {"log unknown", "log_level: trace", false},
 		{"history minimum", "history: 1s", true}, {"history below minimum", "history: 999ms", false}, {"history maximum", "history: 24h", true}, {"history above maximum", "history: 24h1s", false},
-		{"memory minimum", "max_memory: 1MiB", true}, {"memory below minimum", "max_memory: 1023KiB", false}, {"memory maximum", "max_memory: 1GiB", true}, {"memory above maximum", "max_memory: 1025MiB", false},
+		{"recorder budget is internal", "max_memory: 32MiB", false},
 		{"one sensor", "sensors: [block_io]", true}, {"no sensors", "sensors: []", false}, {"unknown sensor", "sensors: [disk]", false}, {"duplicate sensor", "sensors: [tcp, tcp]", false},
 		{"strict false", "strict: false", true}, {"strict true", "strict: true", true}, {"strict invalid type", "strict: yes", false},
 		{"poll minimum", "poll_interval: 100ms", true}, {"poll below minimum", "poll_interval: 99ms", false}, {"poll maximum", "poll_interval: 1m", true}, {"poll above maximum", "poll_interval: 1m1s", false}, {"poll longer than history", "history: 1s\npoll_interval: 2s", false},

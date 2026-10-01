@@ -163,7 +163,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 		return err
 	}
 	metadata := process.NewWithPathLimit("/proc", e.Config.Resources.MetadataEntries, e.Config.Resources.MetadataPathBytes)
-	r := recorder.NewWithSegmentInterval(e.Config.History, e.Config.MaxMemory, e.Config.Resources.SegmentInterval, now)
+	r := recorder.NewWithSegmentInterval(e.Config.History, e.Config.RecorderBudgetBytes, e.Config.Resources.SegmentInterval, now)
 	var ingressOverloadLogged atomic.Bool
 	recorderOverloadLogged := false
 	sink := func(v model.Event) {
@@ -387,5 +387,5 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 // Settings is the durable subset needed to interpret this recording. Client
 // transport limits and presentation choices are not workload evidence.
 func (e *Engine) Settings() model.RecordingSettings {
-	return model.RecordingSettings{HistoryNS: uint64(e.Config.History), MaxMemory: e.Config.MaxMemory, BlockThresholdNS: uint64(e.Config.BlockThreshold), SchedulerThresholdNS: uint64(e.Config.SchedulerThreshold), BlockCriticalNS: uint64(e.Config.BlockCritical), SchedulerCriticalNS: uint64(e.Config.SchedulerCritical), DetailRate: e.Config.DetailRate, Enabled: append([]string(nil), e.Config.Enabled...), Strict: e.Config.Strict, PollIntervalNS: uint64(e.Config.Resources.PollInterval), SegmentIntervalNS: uint64(e.Config.Resources.SegmentInterval), IngressEvents: e.Config.Resources.IngressEvents, MetadataEntries: e.Config.Resources.MetadataEntries, BlockTrackingEntries: e.Config.Resources.BlockTrackingEntries, SchedulerTrackingEntries: e.Config.Resources.SchedulerTrackingEntries, RingBytes: e.Config.Resources.RingBytes}
+	return model.RecordingSettings{HistoryNS: uint64(e.Config.History), MaxMemory: e.Config.RecorderBudgetBytes, BlockThresholdNS: uint64(e.Config.BlockThreshold), SchedulerThresholdNS: uint64(e.Config.SchedulerThreshold), BlockCriticalNS: uint64(e.Config.BlockCritical), SchedulerCriticalNS: uint64(e.Config.SchedulerCritical), DetailRate: e.Config.DetailRate, Enabled: append([]string(nil), e.Config.Enabled...), Strict: e.Config.Strict, PollIntervalNS: uint64(e.Config.Resources.PollInterval), SegmentIntervalNS: uint64(e.Config.Resources.SegmentInterval), IngressEvents: e.Config.Resources.IngressEvents, MetadataEntries: e.Config.Resources.MetadataEntries, BlockTrackingEntries: e.Config.Resources.BlockTrackingEntries, RingBytes: e.Config.Resources.RingBytes}
 }

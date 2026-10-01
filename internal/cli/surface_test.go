@@ -78,13 +78,13 @@ func TestCommandConfigSurfacesStayScoped(t *testing.T) {
 		path []string
 		keys []string
 	}{
-		{[]string{"daemon"}, []string{"history", "log_level", "max_memory", "poll_interval", "sensors", "socket", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
-		{[]string{"capture"}, []string{"log_level", "max_memory", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn"}},
+		{[]string{"daemon"}, []string{"history", "log_level", "poll_interval", "sensors", "socket", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
+		{[]string{"capture"}, []string{"log_level", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn"}},
 		{[]string{"status"}, []string{"socket", "timeout"}},
 		{[]string{"snapshot"}, []string{"socket", "timeout"}},
 		{[]string{"analyze"}, nil},
-		{[]string{"config", "check"}, []string{"history", "log_level", "max_memory", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
-		{[]string{"config", "show"}, []string{"history", "log_level", "max_memory", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
+		{[]string{"config", "check"}, []string{"history", "log_level", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
+		{[]string{"config", "show"}, []string{"history", "log_level", "poll_interval", "sensors", "strict", "thresholds.block_io.critical", "thresholds.block_io.warn", "thresholds.scheduler.critical", "thresholds.scheduler.warn", "timeout"}},
 	}
 	for _, test := range tests {
 		t.Run(strings.Join(test.path, " "), func(t *testing.T) {

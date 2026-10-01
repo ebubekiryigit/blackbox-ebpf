@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -119,7 +120,7 @@ func (s Store) save(ctx context.Context, c model.Capture, rotateFn rotateFiles) 
 func rotate(root *os.Root, dir *os.File, files []storedFile, total, added int64, incoming int, limits config.AutoCapture) ([]storedFile, int64, error) {
 	removed := false
 	var rotationErr error
-	for len(files)+incoming > limits.MaxFiles || total+added > limits.MaxStorage {
+	for len(files) > limits.MaxFiles-incoming || total > limits.MaxStorage || added > limits.MaxStorage-total {
 		if len(files) == 0 {
 			rotationErr = fmt.Errorf("automatic storage budget exhausted")
 			break
@@ -186,7 +187,7 @@ func scan(ctx context.Context, root *os.Root, dir *os.File) ([]storedFile, int64
 				}
 				continue
 			}
-			if info.Size() > config.MaxAutoStorage-total {
+			if info.Size() < 0 || info.Size() > math.MaxInt64-total {
 				return nil, 0, fmt.Errorf("managed captures exceed supported storage accounting")
 			}
 			total += info.Size()
