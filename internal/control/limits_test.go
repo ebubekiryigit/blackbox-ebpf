@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -101,6 +102,55 @@ func TestDaemonShutdownClosesIdleControlClients(t *testing.T) {
 		t.Fatal("shutdown waited for an idle client")
 	}
 }
+
+func TestPermanentAcceptFailureClosesIdleControlClients(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	listener := &failedAcceptListener{conn: serverConn, accepted: make(chan struct{}), closed: make(chan struct{})}
+	limits := config.Default().Control
+	limits.Timeout = 2 * time.Second
+	done := make(chan error, 1)
+	go func() {
+		done <- serveListener(context.Background(), listener, &app.Engine{Config: config.Default()}, limits)
+	}()
+	select {
+	case <-listener.accepted:
+	case <-time.After(time.Second):
+		t.Fatal("control client was not accepted")
+	}
+	_ = listener.Close()
+	select {
+	case err := <-done:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("permanent accept error was lost: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("fatal accept error waited for idle client's request timeout")
+	}
+}
+
+type failedAcceptListener struct {
+	conn     net.Conn
+	accepted chan struct{}
+	closed   chan struct{}
+	once     sync.Once
+}
+
+func (l *failedAcceptListener) Accept() (net.Conn, error) {
+	if l.conn != nil {
+		conn := l.conn
+		l.conn = nil
+		close(l.accepted)
+		return conn, nil
+	}
+	<-l.closed
+	return nil, net.ErrClosed
+}
+func (l *failedAcceptListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+func (*failedAcceptListener) Addr() net.Addr { return controlTestAddr("fatal") }
 
 func TestShutdownCancelsActiveSnapshotAndReleasesLease(t *testing.T) {
 	serverConn, clientConn := net.Pipe()

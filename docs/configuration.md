@@ -98,8 +98,11 @@ the client's `--timeout` deadline. Automatic incident persistence uses its own
 The recorder has a fixed 32 MiB retained-history accounting budget. It covers
 event/metric backing capacity, retained string lengths, and segment bookkeeping.
 It does not bound process RSS.
-Status and captures expose the actual retained bytes, budget, evictions, and
-drops. Under load, the retained window may become shorter than `history`.
+Status shows the age of the oldest retained segment alongside the configured
+`history` target. It also exposes retained bytes, budget, evictions, and drops.
+The segment age is not a guarantee of continuous sensor coverage. Under load,
+the retained window may become shorter than `history`; automatic incident files
+preserve published windows independently of the rolling recorder.
 When any bounded stage overloads, lifetime counters expose dropped or suppressed
 details; the daemon logs the first userspace overload.
 

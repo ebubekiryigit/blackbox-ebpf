@@ -99,9 +99,10 @@ struct {
 } details SEC(".maps");
 struct {
   // Never evict the active second: eviction would reset its shared quota.
-  // Userspace removes expired seconds during aggregate polling.
+  // Userspace removes expired seconds during aggregate polling. Leave one
+  // extra minute of slots after the longest supported one-minute poll.
   __uint(type, BPF_MAP_TYPE_HASH);
-  __uint(max_entries, 64);
+  __uint(max_entries, 128);
   __type(key, __u64);
   __type(value, struct detail_budget);
 } detail_budgets SEC(".maps");

@@ -95,7 +95,7 @@ func New() *cobra.Command {
 		if asJSON {
 			outputErr = writeJSON(cmd.OutOrStdout(), h)
 		} else {
-			outputErr = renderStatus(cmd.OutOrStdout(), h, terminal.For(cmd.OutOrStdout(), colorMode), statusVerbose)
+			outputErr = renderStatus(cmd.OutOrStdout(), h, r.Settings, terminal.For(cmd.OutOrStdout(), colorMode), statusVerbose)
 		}
 		if outputErr != nil {
 			return outputErr

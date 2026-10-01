@@ -59,6 +59,9 @@ func TestRunContinuesAcrossWallClockDiscontinuity(t *testing.T) {
 	if status.Health.ClockChanges != 1 || status.Health.ObservedAt == nil || !status.Health.ObservedAt.Equal(samples[2].wall) || status.Health.LastClockChange == nil {
 		t.Fatalf("running recorder did not expose current realtime and clock health: %+v", status.Health)
 	}
+	if status.Health.RetainedSpanNS != uint64(2*time.Second) {
+		t.Fatalf("retained span must use current BOOTTIME, got %s", time.Duration(status.Health.RetainedSpanNS))
+	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("recorder stopped with an error after a wall-clock step: %v", err)

@@ -80,16 +80,21 @@ func Serve(ctx context.Context, path string, e *app.Engine) error {
 }
 
 func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits config.Control) error {
-	stopListener := context.AfterFunc(ctx, func() { _ = l.Close() })
-	defer stopListener()
+	serveCtx, cancel := context.WithCancel(ctx)
+	stopListener := context.AfterFunc(serveCtx, func() { _ = l.Close() })
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	defer func() {
+		cancel()
+		_ = l.Close()
+		wg.Wait()
+		stopListener()
+	}()
 	clients := make(chan struct{}, limits.MaxClients)
 	var retryDelay time.Duration
 	for {
 		conn, er := l.Accept()
 		if er != nil {
-			if ctx.Err() != nil {
+			if serveCtx.Err() != nil {
 				return nil
 			}
 			if netErr, ok := er.(net.Error); ok && netErr.Temporary() {
@@ -100,7 +105,7 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 				}
 				timer := time.NewTimer(retryDelay)
 				select {
-				case <-ctx.Done():
+				case <-serveCtx.Done():
 					timer.Stop()
 					return nil
 				case <-timer.C:
@@ -123,7 +128,7 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 			defer wg.Done()
 			defer func() { <-clients }()
 			defer conn.Close()
-			stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+			stop := context.AfterFunc(serveCtx, func() { _ = conn.Close() })
 			defer stop()
 			_ = conn.SetDeadline(time.Now().Add(limits.Timeout))
 			respond := func(r Response) error { return writeResponse(conn, limits, r) }
@@ -151,7 +156,7 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 					return
 				}
 			}
-			queryCtx, cancel := context.WithTimeout(ctx, limits.QueryTimeout)
+			queryCtx, cancel := context.WithTimeout(serveCtx, limits.QueryTimeout)
 			defer cancel()
 			last := time.Duration(0)
 			if req.Operation == "snapshot" {
@@ -170,7 +175,7 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 				return
 			}
 			if req.Operation == "snapshot" {
-				if er = (capture.Container{Limits: e.Config.Capture}).Write(&boundedWriter{Writer: conn, remaining: limits.MaxCaptureBytes}, result.Capture); er != nil && ctx.Err() == nil {
+				if er = (capture.Container{Limits: e.Config.Capture}).Write(&boundedWriter{Writer: conn, remaining: limits.MaxCaptureBytes}, result.Capture); er != nil && serveCtx.Err() == nil {
 					e.RecordSnapshotFailure(er)
 				}
 			}

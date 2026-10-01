@@ -33,8 +33,9 @@ docker compose exec blackbox /app/blackbox snapshot -o /var/lib/blackbox/capture
 docker compose exec blackbox /app/blackbox analyze /var/lib/blackbox/captures/incident.bbx
 ```
 
-This starts the daemon with five minutes of bounded rolling history, shows sensor
-health, writes `captures/incident.bbx` on the host, and prints a terminal report.
+This starts the daemon with a five-minute rolling-history target, shows sensor
+health and the actual retained span, writes `captures/incident.bbx` on the host,
+and prints a terminal report.
 Critical incidents are also saved automatically under `captures/auto/`.
 Capture destinations are private and never overwritten, so choose a new `-o` path
 for the next incident.

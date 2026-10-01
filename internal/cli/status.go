@@ -6,11 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/terminal"
 )
 
-func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) error {
+func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings, t terminal.Theme, verbose bool) error {
 	var b strings.Builder
 	enabled, active := sensorCounts(h)
 	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
@@ -28,7 +29,16 @@ func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) e
 	if enabled == 0 {
 		tone, title = terminal.Info, "RECORDER STATUS UNKNOWN"
 	}
-	t.Panel(&b, tone, title, fmt.Sprintf("%d / %d enabled sensors recording · %.2f / %.2f MiB history retained", active, enabled, float64(h.RetainedBytes)/(1<<20), float64(h.MaxBytes)/(1<<20)), "Counters cover this daemon run. Analyze a snapshot to assess workload signals.")
+	lines := []string{fmt.Sprintf("%d / %d enabled sensors recording · %.2f / %.2f MiB history retained", active, enabled, float64(h.RetainedBytes)/(1<<20), float64(h.MaxBytes)/(1<<20))}
+	if h.RetainedSpanNS != 0 {
+		retained := "Oldest retained segment: " + time.Duration(h.RetainedSpanNS).Round(time.Second).String() + " ago"
+		if settings != nil && settings.HistoryNS > 0 {
+			retained += " · history target " + config.DurationText(time.Duration(settings.HistoryNS))
+		}
+		lines = append(lines, retained)
+	}
+	lines = append(lines, "Counters cover this daemon run. Analyze a snapshot to assess workload signals.")
+	t.Panel(&b, tone, title, lines...)
 	t.Section(&b, "SENSORS")
 	for _, s := range h.Sensors {
 		tone, state := terminal.Good, "Recording"

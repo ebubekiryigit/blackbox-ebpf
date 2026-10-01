@@ -220,8 +220,9 @@ ingress, metadata cache, Go runtime, capture encoding, and readback validation
 add memory. One in-flight snapshot may keep otherwise evicted segments alive
 until writing finishes. The 256 MiB decoded `.bbx` limit bounds archive bytes,
 not the RSS of `analyze`. Status exposes BPF memory estimates when the kernel
-supplies them. High load may shorten retained history or drop details; inspect
-counters alongside the report.
+supplies them. Status shows how old the oldest retained segment is, not a
+guarantee of continuous sensor coverage. High load may shorten retained history
+or drop details; inspect counters alongside the report.
 
 For deployment sizing, measure daemon peak RSS from `/proc/<pid>/status`
 (`VmHWM`) during representative recording and snapshot load. Measure offline

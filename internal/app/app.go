@@ -209,6 +209,9 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	disabled := map[string]bool{}
 	health := func() model.Health {
 		h := r.Health()
+		if now >= h.RetainedFromNS {
+			h.RetainedSpanNS = now - h.RetainedFromNS
+		}
 		if e.host.ClockSource == "boottime" {
 			at := tracker.last.wall
 			h.ObservedAt = &at

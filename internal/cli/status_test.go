@@ -40,7 +40,16 @@ func TestStatusReturnsFailureWhenNoSensorIsActive(t *testing.T) {
 				defer conn.Close()
 				var request control.Request
 				if err = json.NewDecoder(conn).Decode(&request); err == nil {
-					err = json.NewEncoder(conn).Encode(control.Response{Version: model.ProtocolVersion, Health: &model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "error", Reason: "reader failed"}}}})
+					response := control.Response{
+						Version: model.ProtocolVersion,
+						Health: &model.Health{
+							Sensors:        []model.SensorHealth{{Name: "scheduler", State: "error", Reason: "reader failed"}},
+							RetainedFromNS: uint64(time.Hour),
+							RetainedSpanNS: uint64(2*time.Minute + 21*time.Second),
+						},
+						Settings: &model.RecordingSettings{HistoryNS: uint64(24 * time.Hour)},
+					}
+					err = json.NewEncoder(conn).Encode(response)
 				}
 				done <- err
 			}()
@@ -62,10 +71,10 @@ func TestStatusReturnsFailureWhenNoSensorIsActive(t *testing.T) {
 			}
 			if mode == "json" {
 				var health model.Health
-				if err := json.Unmarshal(output.Bytes(), &health); err != nil || len(health.Sensors) != 1 || health.Sensors[0].State != "error" {
+				if err := json.Unmarshal(output.Bytes(), &health); err != nil || len(health.Sensors) != 1 || health.Sensors[0].State != "error" || health.RetainedSpanNS != uint64(2*time.Minute+21*time.Second) {
 					t.Fatalf("machine-readable degraded health was lost: %v %s", err, output.String())
 				}
-			} else if !strings.Contains(output.String(), "NO ACTIVE SENSORS") {
+			} else if !strings.Contains(output.String(), "NO ACTIVE SENSORS") || !strings.Contains(output.String(), "history target 24h") {
 				t.Fatalf("status details were not rendered:\n%s", output.String())
 			}
 			if serverErr := <-done; serverErr != nil {
@@ -78,7 +87,7 @@ func TestStatusReturnsFailureWhenNoSensorIsActive(t *testing.T) {
 func TestStatusIncludesAutomaticCaptureHealth(t *testing.T) {
 	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, AutoCapture: &model.AutoCaptureHealth{State: "writing", Directory: "/captures/auto", Sensors: []string{"scheduler"}, Detected: 3, Saved: 2, Failures: 1, PendingUntilNS: uint64(time.Hour), PendingForNS: uint64(5 * time.Second), LastPath: "/captures/auto/incident.bbx", LastError: "storage unavailable"}}
 	var out bytes.Buffer
-	if err := renderStatus(&out, h, terminal.Theme{}, false); err != nil {
+	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"AUTOMATIC CAPTURES", "State: writing", "storage unavailable", "Detected 3 · saved 2", "Window ends in 5s", "COLLECTION NOTES"} {
@@ -92,7 +101,7 @@ func TestStatusShowsClockDiscontinuityAndCurrentRealtime(t *testing.T) {
 	now := time.Date(2026, 9, 28, 7, 4, 7, 0, time.UTC)
 	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, ObservedAt: &now, ClockChanges: 1, LastClockChange: &model.ClockDiscontinuity{DetectedBootNS: 200, DetectedAt: now.Add(-time.Minute), OffsetChangeNS: int64(14 * time.Hour)}}
 	var out bytes.Buffer
-	if err := renderStatus(&out, h, terminal.Theme{}, false); err != nil {
+	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"COLLECTION NOTES", "CLOCK", "1 wall-clock discontinuity detected", "offset change 14h0m0s", "Current UTC (realtime): 2026-09-28 07:04:07"} {
@@ -132,7 +141,7 @@ func TestStatusShowsPartialCoverageAndLifetimeCounters(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if err := renderStatus(&out, h, terminal.Theme{Width: 120}, tc.verbose); err != nil {
+			if err := renderStatus(&out, h, nil, terminal.Theme{Width: 120}, tc.verbose); err != nil {
 				t.Fatal(err)
 			}
 			for _, want := range tc.want {
@@ -146,5 +155,37 @@ func TestStatusShowsPartialCoverageAndLifetimeCounters(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestStatusShowsRetainedSpanWithoutClaimingCoverage(t *testing.T) {
+	h := model.Health{
+		Sensors:         []model.SensorHealth{{Name: "scheduler", State: "healthy"}},
+		RetainedFromNS:  uint64(time.Hour),
+		RetainedSpanNS:  uint64(2*time.Minute + 21*time.Second),
+		RetainedBytes:   31 << 20,
+		MaxBytes:        32 << 20,
+		EvictedSegments: 458,
+	}
+	settings := &model.RecordingSettings{HistoryNS: uint64(24 * time.Hour)}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, settings, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"RECORDER ACTIVE", "Oldest retained segment: 2m21s ago", "history target 24h"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status omitted %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "2m21s monitored") || strings.Contains(out.String(), "COLLECTION NOTES") {
+		t.Fatalf("retention age was mistaken for sensor coverage or loss:\n%s", out.String())
+	}
+	out.Reset()
+	h.RetainedSpanNS = 0 // An older daemon does not send this additive field.
+	if err := renderStatus(&out, h, settings, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Oldest retained segment:") {
+		t.Fatalf("missing retention age was presented as zero:\n%s", out.String())
 	}
 }

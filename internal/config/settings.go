@@ -163,7 +163,7 @@ var settingHelp = map[string]string{
 	"auto_capture.max_storage":      "Published automatic file budget: at least 1MiB (B/KiB/MiB/GiB). A staged replacement briefly needs extra disk space.",
 	"auto_capture.write_timeout":    "Deadline for persisting one automatic incident: 1s–10m. Independent of local control requests.",
 	"log_level":                     "Daemon log verbosity: debug, info, warn, error. Logs go to stderr.",
-	"history":                       "Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.",
+	"history":                       "Rolling history target: 1s–24h. Examples: 30s, 5m, 1h.\nThe fixed recorder budget may retain less; status shows the actual span.",
 	"sensors":                       "Enabled sensors: block_io, scheduler, tcp, oom. Choose one or more; no duplicates.",
 	"strict":                        "false: continue with available sensors and report missing coverage.\ntrue: fail startup or stop recording if any enabled sensor fails permanently.",
 	"poll_interval":                 "How often to collect sensor totals: 100ms–1m, no longer than history.\nShorter intervals improve time resolution and increase polling work.",

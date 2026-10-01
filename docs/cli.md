@@ -83,7 +83,7 @@ blackbox config check
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
-| `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
+| `--history` | `5m` | Rolling history target: 1s–24h. Examples: 30s, 5m, 1h. The fixed recorder budget may retain less; status shows the actual span. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
@@ -113,7 +113,7 @@ blackbox config show
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
-| `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
+| `--history` | `5m` | Rolling history target: 1s–24h. Examples: 30s, 5m, 1h. The fixed recorder budget may retain less; status shows the actual span. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |
@@ -143,7 +143,7 @@ blackbox daemon
 | `--block-io-critical` | `250ms` | Critical I/O threshold. Example: 250ms. |
 | `--block-io-warn` | `50ms` | Slow I/O threshold. Example: 50ms. |
 | `--config` | `` | explicit YAML configuration file (no implicit discovery) |
-| `--history` | `5m` | Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h. |
+| `--history` | `5m` | Rolling history target: 1s–24h. Examples: 30s, 5m, 1h. The fixed recorder budget may retain less; status shows the actual span. |
 | `--log-level` | `info` | Daemon log verbosity: debug, info, warn, error. Logs go to stderr. |
 | `--poll-interval` | `1s` | How often to collect sensor totals: 100ms–1m, no longer than history. Shorter intervals improve time resolution and increase polling work. |
 | `--scheduler-critical` | `100ms` | Critical runnable wait threshold. Example: 100ms. |

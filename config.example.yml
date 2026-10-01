@@ -4,7 +4,8 @@
 
 # Daemon log verbosity: debug, info, warn, error. Logs go to stderr.
 log_level: info
-# Rolling history to keep: 1s–24h. Examples: 30s, 5m, 1h.
+# Rolling history target: 1s–24h. Examples: 30s, 5m, 1h.
+# The fixed recorder budget may retain less; status shows the actual span.
 history: 5m
 # Enabled sensors: block_io, scheduler, tcp, oom. Choose one or more; no duplicates.
 sensors:

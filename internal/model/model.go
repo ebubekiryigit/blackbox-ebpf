@@ -98,6 +98,7 @@ type Health struct {
 	RetainedBytes    int64               `json:"retained_bytes"`
 	MaxBytes         int64               `json:"max_bytes"`
 	RetainedFromNS   uint64              `json:"retained_from_ns"`
+	RetainedSpanNS   uint64              `json:"retained_span_ns"`
 }
 
 // ClockDiscontinuity records the latest detected change in the local
