@@ -155,6 +155,12 @@ func checkTypes(n *yaml.Node, t reflect.Type, path string) error {
 			key, val := n.Content[i], n.Content[i+1]
 			field, ok := fields[key.Value]
 			if key.Tag != "!!str" || !ok {
+				if path == "" && key.Value == "max_memory" {
+					return fmt.Errorf("max_memory was removed: remove this setting; retained history now uses an internal accounting budget, not a process memory cap")
+				}
+				if path == "" {
+					return fmt.Errorf("unknown key %q", key.Value)
+				}
 				return fmt.Errorf("%s: unknown key %q", path, key.Value)
 			}
 			if seen[key.Value] {

@@ -62,6 +62,9 @@ func TestConfigurationPrecedenceAndStrictParsing(t *testing.T) {
 				}
 			}
 			c, err := Load(path, flags)
+			if tt.name == "removed recorder memory setting" && (err == nil || !strings.Contains(err.Error(), "max_memory was removed")) {
+				t.Fatalf("missing targeted migration error: %v", err)
+			}
 			if (err != nil) != tt.fail {
 				t.Fatalf("config=%+v error=%v", c, err)
 			}
