@@ -107,7 +107,7 @@ func TestAutomaticCaptureThroughRecorderStorageAndReadback(t *testing.T) {
 	if c.Manifest.Health.AutoCapture != nil {
 		t.Fatal("transient automatic state was persisted in capture")
 	}
-	if a == nil || a.EndMonoNS-a.DetectedMonoNS != uint64(e.Config.AutoCapture.After) || a.BeforeNS != uint64(time.Second) || len(a.Triggers) != 1 || a.Triggers[0].Count != 2 {
+	if a == nil || a.EndMonoNS-a.DetectedMonoNS < uint64(e.Config.AutoCapture.After) || a.EndMonoNS-a.DetectedMonoNS > uint64(e.Config.AutoCapture.After+e.Config.Resources.PollInterval) || a.BeforeNS != uint64(time.Second) || len(a.Triggers) != 1 || a.Triggers[0].Count != 2 {
 		t.Fatalf("bad incident %+v", a)
 	}
 	var counted uint64
@@ -178,7 +178,7 @@ func TestManualSnapshotDuringPostWindowAndAutomaticBusyWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Manifest.AutoIncident.EndMonoNS != c.Manifest.EndMonoNS || c.Manifest.AutoIncident.AfterNS != uint64(cfg.AutoCapture.After) {
+	if c.Manifest.AutoIncident.EndMonoNS != c.Manifest.EndMonoNS || c.Manifest.AutoIncident.AfterNS < uint64(cfg.AutoCapture.After) || c.Manifest.AutoIncident.AfterNS > uint64(cfg.AutoCapture.After+cfg.Resources.PollInterval) {
 		t.Fatal("writer delay moved the window")
 	}
 	h = waitAuto(t, ctx, e, func(h *model.AutoCaptureHealth) bool { return h.Saved == 2 })
@@ -407,6 +407,38 @@ func TestAutomaticSelectionHoldsManualSnapshotLease(t *testing.T) {
 	(<-a.jobs).release()
 	if e.snapshotBusy.Load() {
 		t.Fatal("automatic writer leaked snapshot lease")
+	}
+}
+
+func TestAutomaticSelectionIncludesFinalCollectedAggregate(t *testing.T) {
+	cfg := autoConfig(t)
+	cfg.History = time.Minute
+	cfg.AutoCapture.After = 10 * time.Second
+	e := &Engine{Config: cfg}
+	a := &automatic{controller: autocapture.New(cfg, model.Families), engine: e, timer: time.NewTimer(time.Hour), jobs: make(chan autoJob, 1)}
+	defer a.timer.Stop()
+	r := recorder.New(cfg.History, cfg.RecorderBudgetBytes, uint64(100*time.Second))
+	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(99 * time.Second), EndMonoNS: uint64(100 * time.Second), Count: 1}, uint64(100*time.Second))
+	m := model.Metric{Family: "oom", StartMonoNS: uint64(109 * time.Second), EndMonoNS: uint64(111 * time.Second), Count: 1}
+	if !r.Metric(m, uint64(111*time.Second)) {
+		t.Fatal("failed to record final aggregate")
+	}
+	a.progress(uint64(111*time.Second), uint64(111*time.Second), r, func() model.Health { return model.Health{} }, model.Host{})
+	job := <-a.jobs
+	defer job.release()
+	if job.capture.Manifest.EndMonoNS != uint64(111*time.Second) || job.capture.Manifest.AutoIncident.AfterNS != uint64(11*time.Second) {
+		t.Fatalf("capture ends before the collected aggregate: %+v", job.capture.Manifest)
+	}
+	found := false
+	for _, segment := range job.capture.Segments {
+		for _, got := range segment.Metrics {
+			if got == m {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("final aggregate is absent from automatic capture")
 	}
 }
 

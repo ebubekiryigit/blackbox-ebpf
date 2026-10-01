@@ -69,6 +69,52 @@ func TestConsecutiveWindowRetainsAggregateAcrossBoundary(t *testing.T) {
 	}
 }
 
+func TestCollectedTailBecomesPublishedBoundary(t *testing.T) {
+	c := New(config.Default(), model.Families)
+	c.Observe(metric("oom", 99, 100, 1), seconds(100))
+	// The poll that passes the 110s deadline also detects a new trigger. Its
+	// complete 109s-111s interval belongs to both files as boundary evidence.
+	c.Observe(metric("oom", 109, 111, 1), seconds(111))
+	c.CollectedThrough(seconds(111))
+	first, _ := c.Begin()
+	if first.EndMonoNS != seconds(111) || first.AfterNS != seconds(11) || !first.Valid(first.EndMonoNS) {
+		t.Fatalf("collected interval was not included: %+v", first)
+	}
+	c.Finish("/captures/first.bbx", time.Time{}, nil)
+	second, start := c.Begin()
+	if start != seconds(109) || second.Triggers[0].FirstIntervalStartNS != seconds(109) {
+		t.Fatalf("waiting trigger lost its complete boundary interval: start=%d incident=%+v", start, second)
+	}
+}
+
+func TestWriterRetryDoesNotMoveCollectedBoundary(t *testing.T) {
+	c := New(config.Default(), model.Families)
+	c.Observe(metric("oom", 99, 100, 1), seconds(100))
+	c.CollectedThrough(seconds(111))
+	c.CollectedThrough(seconds(120)) // The writer lease remained busy.
+	incident, _ := c.Begin()
+	if incident.EndMonoNS != seconds(111) {
+		t.Fatalf("writer delay moved incident end: %+v", incident)
+	}
+}
+
+func TestPublishedCaptureWithRotationErrorAdvancesBoundary(t *testing.T) {
+	c := New(config.Default(), model.Families)
+	c.Observe(metric("oom", 99, 100, 1), seconds(100))
+	c.Observe(metric("oom", 110, 111, 1), seconds(111))
+	c.CollectedThrough(seconds(111))
+	first, _ := c.Begin()
+	c.Finish("/captures/first.bbx", time.Unix(111, 0), errors.New("rotation failed"))
+	h := c.Health()
+	if h.Saved != 1 || h.Failures != 1 || h.LastPath != "/captures/first.bbx" || h.LastError == "" {
+		t.Fatalf("published file or maintenance failure hidden: %+v", h)
+	}
+	_, start := c.Begin()
+	if start < first.EndMonoNS-uint64(time.Second) {
+		t.Fatalf("published window was repeated after rotation error: %d", start)
+	}
+}
+
 func TestFirstWindowIncludesTriggerIntervalLongerThanLookback(t *testing.T) {
 	cfg := config.Default()
 	cfg.AutoCapture.Before = time.Second

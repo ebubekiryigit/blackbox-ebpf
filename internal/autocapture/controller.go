@@ -16,6 +16,8 @@ type Controller struct {
 	health       model.AutoCaptureHealth
 	current      *model.AutoIncident
 	next         *model.AutoIncident
+	currentReady uint64
+	nextReady    uint64
 	writing      bool
 	writingEnd   uint64
 	lastSavedEnd uint64
@@ -86,6 +88,7 @@ func (c *Controller) Observe(m model.Metric, now uint64) {
 			if end := now + uint64(c.config.AutoCapture.After); end > c.next.EndMonoNS {
 				c.next.EndMonoNS = end
 				c.next.AfterNS = end - c.next.DetectedMonoNS
+				c.nextReady = 0
 			}
 			c.health.Coalesced += n
 		}
@@ -115,9 +118,26 @@ func (c *Controller) Deadline() (uint64, bool) {
 	return c.current.EndMonoNS, true
 }
 
+// CollectedThrough remembers the first complete poll past each deadline. A
+// busy snapshot writer must not extend the window on every later retry.
+func (c *Controller) CollectedThrough(end uint64) {
+	if c.current != nil && c.currentReady == 0 && end >= c.current.EndMonoNS {
+		c.currentReady = end
+	}
+	if c.next != nil && c.nextReady == 0 && end >= c.next.EndMonoNS {
+		c.nextReady = end
+	}
+}
+
 func (c *Controller) Begin() (model.AutoIncident, uint64) {
 	v := *c.current
 	v.Triggers = append([]model.AutoTrigger(nil), v.Triggers...)
+	// Aggregates are indivisible intervals. Include the interval collected at
+	// the deadline so it cannot fall between two published files.
+	if c.currentReady > v.EndMonoNS {
+		v.EndMonoNS = c.currentReady
+		v.AfterNS = c.currentReady - v.DetectedMonoNS
+	}
 	start := uint64(0)
 	if v.DetectedMonoNS > v.BeforeNS {
 		start = v.DetectedMonoNS - v.BeforeNS
@@ -129,11 +149,12 @@ func (c *Controller) Begin() (model.AutoIncident, uint64) {
 	// end. This permits only the boundary interval to overlap, not the full lookback.
 	boundary := start
 	for _, trigger := range v.Triggers {
-		if trigger.FirstIntervalStartNS < boundary && trigger.LastIntervalEndNS > boundary {
+		if trigger.FirstIntervalStartNS < boundary && trigger.LastIntervalEndNS >= boundary {
 			start = min(start, trigger.FirstIntervalStartNS)
 		}
 	}
 	c.current, c.next = c.next, nil
+	c.currentReady, c.nextReady = c.nextReady, 0
 	c.writing = true
 	c.writingEnd = v.EndMonoNS
 	return v, start
@@ -141,14 +162,18 @@ func (c *Controller) Begin() (model.AutoIncident, uint64) {
 
 func (c *Controller) Finish(path string, savedAt time.Time, err error) {
 	c.writing = false
+	if path != "" {
+		// Store returns a path only after publication. Rotation can fail later;
+		// that error must not make the next incident repeat this saved window.
+		c.health.Saved++
+		c.lastSavedEnd = c.writingEnd
+		c.health.LastPath, c.health.LastSavedAt = path, savedAt
+	}
+	c.writingEnd = 0
 	if err != nil {
-		c.writingEnd = 0
 		c.health.Failures++
 		c.health.LastError = err.Error()
 		return
 	}
-	c.health.Saved++
-	c.lastSavedEnd = c.writingEnd
-	c.writingEnd = 0
-	c.health.LastPath, c.health.LastSavedAt, c.health.LastError = path, savedAt, ""
+	c.health.LastError = ""
 }

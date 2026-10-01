@@ -89,7 +89,11 @@ func (a *automatic) completed() <-chan autoResult {
 func (a *automatic) finish(result autoResult) {
 	a.controller.Finish(result.path, result.at, result.err)
 	if result.err != nil {
-		a.engine.RecordSnapshotFailure(fmt.Errorf("automatic capture failed: %w", result.err))
+		if result.path != "" {
+			a.engine.RecordSnapshotFailure(fmt.Errorf("automatic capture saved at %s with a rotation error: %w", result.path, result.err))
+		} else {
+			a.engine.RecordSnapshotFailure(fmt.Errorf("automatic capture failed: %w", result.err))
+		}
 	} else if a.engine.logger != nil {
 		a.engine.logger.Info("automatic capture saved", "path", result.path)
 	}
@@ -98,6 +102,7 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 	if a == nil {
 		return
 	}
+	a.controller.CollectedThrough(collectedUntil)
 	end, pending := a.controller.Deadline()
 	if !pending {
 		a.retrying = false
