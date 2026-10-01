@@ -285,23 +285,44 @@ func (r *Recorder) SnapshotWindow(start, now uint64, host model.Host, health mod
 	if from := r.Health().RetainedFromNS; actual < from {
 		actual = min(from, now)
 	}
+	// Rollups cannot be split without inventing per-event timestamps. Include a
+	// complete interval crossing the requested start, even across saved files.
+	boundary := actual
+	includeBoundary := func(ret retained) {
+		for _, m := range ret.segment.Metrics {
+			if m.StartMonoNS < boundary && m.EndMonoNS > boundary && m.EndMonoNS <= now {
+				actual = min(actual, m.StartMonoNS)
+			}
+		}
+	}
+	for _, ret := range r.rollups {
+		if ret.maxNS > boundary && ret.minNS < boundary {
+			includeBoundary(ret)
+		}
+	}
+	if r.rollupActive != nil {
+		includeBoundary(*r.rollupActive)
+	}
 	c := model.Capture{Host: host, Manifest: model.Manifest{FormatVersion: model.FormatVersion, ApplicationVersion: version.String(), StartMonoNS: actual, EndMonoNS: now, RequestedStartMonoNS: start, Health: health, Mode: mode}}
 	c.Manifest.RecordingStartMonoNS = r.started
+	// Widening preserves aggregates, not individual events outside --last.
+	eventStart := max(start, actual)
 	first := sort.Search(len(r.sealed), func(i int) bool { return r.sealed[i].segment.EndMonoNS >= actual })
 	c.Segments = make([]model.Segment, 0, len(r.sealed)-first+1)
 	add := func(ret retained, immutable bool) {
 		s := ret.segment
-		if s.EndMonoNS < actual || s.StartMonoNS > now {
+		if ret.maxNS < actual || ret.minNS > now {
 			return
 		}
 		contained := ret.minNS >= actual && ret.maxNS <= now
-		if immutable && contained {
+		eventsContained := len(s.Events) == 0 || ret.minNS >= eventStart
+		if immutable && contained && eventsContained {
 			c.Segments = append(c.Segments, s)
 			return
 		}
 		// Only a boundary segment or the mutable active segment needs a bounded copy.
 		out := model.Segment{StartMonoNS: s.StartMonoNS, EndMonoNS: s.EndMonoNS}
-		if contained {
+		if contained && eventsContained {
 			out.Events = append([]model.Event(nil), s.Events...)
 			out.Metrics = append([]model.Metric(nil), s.Metrics...)
 			c.Segments = append(c.Segments, out)
@@ -309,7 +330,7 @@ func (r *Recorder) SnapshotWindow(start, now uint64, host model.Host, health mod
 		}
 		events, metrics := 0, 0
 		for _, e := range s.Events {
-			if e.MonoNS >= actual && e.MonoNS <= now {
+			if e.MonoNS >= eventStart && e.MonoNS <= now {
 				events++
 			}
 		}
@@ -321,7 +342,7 @@ func (r *Recorder) SnapshotWindow(start, now uint64, host model.Host, health mod
 		out.Events = make([]model.Event, 0, events)
 		out.Metrics = make([]model.Metric, 0, metrics)
 		for _, e := range s.Events {
-			if e.MonoNS >= actual && e.MonoNS <= now {
+			if e.MonoNS >= eventStart && e.MonoNS <= now {
 				out.Events = append(out.Events, e)
 			}
 		}

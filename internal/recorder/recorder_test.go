@@ -194,6 +194,110 @@ func TestAggregateOnlyBoundaryUsesSelectedIntervals(t *testing.T) {
 	}
 }
 
+func TestSnapshotsPreserveRollupsCrossingRequestedStart(t *testing.T) {
+	start := uint64(time.Hour)
+	minute := uint64(time.Minute)
+	r := New(5*time.Minute, 32<<20, start)
+	rollup := func(from, to uint64) retained {
+		m := model.Metric{Family: "scheduler", StartMonoNS: start + from*minute, EndMonoNS: start + to*minute, Count: 60}
+		m.Histogram[0] = 60
+		return retained{segment: model.Segment{StartMonoNS: m.StartMonoNS, EndMonoNS: m.EndMonoNS, Metrics: []model.Metric{m}}, minNS: m.StartMonoNS, maxNS: m.EndMonoNS}
+	}
+	r.rollups = []retained{rollup(0, 1), rollup(1, 2)}
+	active := rollup(2, 3)
+	r.rollupActive = &active
+	r.active = retained{segment: model.Segment{StartMonoNS: start + 3*minute, EndMonoNS: start + 3*minute}, minNS: start + 3*minute, maxNS: start + 3*minute}
+	// Late details may arrive in a newer segment after metadata resolution.
+	for _, sec := range []uint64{15, 45, 105, 165} {
+		ns := start + sec*uint64(time.Second)
+		r.active.segment.Events = append(r.active.segment.Events, model.Event{Type: "scheduler", MonoNS: ns})
+		r.active.observe(ns, ns)
+	}
+	host := model.Host{ClockSource: "boottime", AnchorMonoNS: start, AnchorWall: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	for _, tc := range []struct {
+		name                   string
+		requested, end, actual time.Duration
+		count                  uint64
+	}{
+		{"manual boundary", 30 * time.Second, 3 * time.Minute, 0, 180},
+		{"consecutive automatic boundary", 90 * time.Second, 3 * time.Minute, time.Minute, 120},
+		{"exact boundary", time.Minute, 3 * time.Minute, time.Minute, 120},
+		{"mutable rollup boundary", 150 * time.Second, 3 * time.Minute, 2 * time.Minute, 60},
+		{"fixed end stays fixed", 30 * time.Second, 90 * time.Second, 0, 60},
+		{"empty window", 3 * time.Minute, 3 * time.Minute, 3 * time.Minute, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requested, end := start+uint64(tc.requested), start+uint64(tc.end)
+			c := r.SnapshotWindow(requested, end, host, r.Health(), "test")
+			if c.Manifest.StartMonoNS != start+uint64(tc.actual) || c.Manifest.RequestedStartMonoNS != requested || c.Manifest.EndMonoNS != end {
+				t.Fatalf("requested/actual window changed incorrectly: %+v", c.Manifest)
+			}
+			var count uint64
+			events := 0
+			for _, s := range c.Segments {
+				for _, e := range s.Events {
+					events++
+					if e.MonoNS < requested || e.MonoNS > end {
+						t.Fatalf("aggregate extension included a detail outside --last: %+v", e)
+					}
+				}
+				for _, m := range s.Metrics {
+					count += m.Count
+					if m.StartMonoNS < c.Manifest.StartMonoNS || m.EndMonoNS > end {
+						t.Fatalf("partial rollup was included: %+v", m)
+					}
+				}
+			}
+			if count != tc.count {
+				t.Fatalf("aggregate count=%d, want %d", count, tc.count)
+			}
+			wantEvents := 0
+			for _, e := range r.active.segment.Events {
+				if e.MonoNS >= requested && e.MonoNS <= end {
+					wantEvents++
+				}
+			}
+			if events != wantEvents {
+				t.Fatalf("in-window details lost: got %d, want %d", events, wantEvents)
+			}
+			var encoded bytes.Buffer
+			if err := (capture.Container{}).Write(&encoded, c); err != nil {
+				t.Fatal(err)
+			}
+			got, err := (capture.Container{}).Read(&encoded)
+			if err != nil || got.Manifest.StartMonoNS != c.Manifest.StartMonoNS || got.Manifest.RequestedStartMonoNS != requested {
+				t.Fatalf("expanded window failed round trip: err=%v manifest=%+v", err, got.Manifest)
+			}
+		})
+	}
+}
+
+func TestRollupExtensionAfterSuspendDoesNotReselectOldDetails(t *testing.T) {
+	start := uint64(time.Hour)
+	now := start + uint64(62*time.Minute)
+	r := New(24*time.Hour, 32<<20, start)
+	metric := model.Metric{Family: "scheduler", StartMonoNS: start, EndMonoNS: now, Count: 10}
+	r.rollups = []retained{{segment: model.Segment{StartMonoNS: start, EndMonoNS: now, Metrics: []model.Metric{metric}}, minNS: start, maxNS: now}}
+	r.sealed = []retained{{segment: model.Segment{StartMonoNS: start, EndMonoNS: start + uint64(time.Minute), Events: []model.Event{{Type: "scheduler", MonoNS: start + uint64(30*time.Second)}}}, minNS: start, maxNS: start + uint64(time.Minute)}}
+	r.active = retained{segment: model.Segment{StartMonoNS: now, EndMonoNS: now, Events: []model.Event{{Type: "scheduler", MonoNS: now - uint64(time.Minute)}}}, minNS: now - uint64(time.Minute), maxNS: now}
+	c := r.SnapshotWindow(now-uint64(10*time.Minute), now, model.Host{}, r.Health(), "test")
+	if c.Manifest.StartMonoNS != start || c.Manifest.RequestedStartMonoNS != now-uint64(10*time.Minute) {
+		t.Fatalf("complete suspend-spanning aggregate lost: %+v", c.Manifest)
+	}
+	events := 0
+	for _, s := range c.Segments {
+		for _, e := range s.Events {
+			events++
+			if e.MonoNS < c.Manifest.RequestedStartMonoNS {
+				t.Fatalf("--last 10m reselected a pre-suspend detail: %+v", e)
+			}
+		}
+	}
+	if events != 1 {
+		t.Fatalf("post-resume detail lost: got %d events", events)
+	}
+}
+
 func TestShortHistoryKeepsDetailsUntilBudgetPressure(t *testing.T) {
 	start := uint64(time.Hour)
 	r := NewWithSegmentInterval(5*time.Minute, 32<<20, time.Second, start)

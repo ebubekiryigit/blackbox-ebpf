@@ -149,7 +149,7 @@ func TestRoundTripPrivatePublicationNoOverwrite(t *testing.T) {
 	}
 }
 func TestRejectTruncationFutureVersionAndOutOfWindow(t *testing.T) {
-	for _, variant := range []string{"truncated", "version", "window", "startup", "requested-start"} {
+	for _, variant := range []string{"truncated", "version", "window", "startup", "requested-start", "expanded-without-aggregate"} {
 		t.Run(variant, func(t *testing.T) {
 			c := sample()
 			if variant == "version" {
@@ -162,6 +162,9 @@ func TestRejectTruncationFutureVersionAndOutOfWindow(t *testing.T) {
 				c.Manifest.RecordingStartMonoNS = 11
 			}
 			if variant == "requested-start" {
+				c.Manifest.RequestedStartMonoNS = c.Manifest.EndMonoNS + 1
+			}
+			if variant == "expanded-without-aggregate" {
 				c.Manifest.RequestedStartMonoNS = 11
 			}
 			var b bytes.Buffer

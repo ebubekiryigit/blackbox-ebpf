@@ -195,8 +195,11 @@ func (container Container) Read(src io.Reader) (model.Capture, error) {
 	if err = c.Host.ValidateClock(); err != nil {
 		return c, err
 	}
-	if c.Manifest.EndMonoNS < c.Manifest.StartMonoNS || c.Manifest.RequestedStartMonoNS > c.Manifest.StartMonoNS || c.Manifest.RecordingStartMonoNS > c.Manifest.StartMonoNS {
+	if c.Manifest.EndMonoNS < c.Manifest.StartMonoNS || c.Manifest.RequestedStartMonoNS > c.Manifest.EndMonoNS || c.Manifest.RecordingStartMonoNS > c.Manifest.StartMonoNS {
 		return c, fmt.Errorf("invalid capture time window")
+	}
+	if c.Manifest.RequestedStartMonoNS > c.Manifest.StartMonoNS && c.Manifest.AggregateOnlyUntilNS <= c.Manifest.RequestedStartMonoNS {
+		return c, fmt.Errorf("expanded capture window lacks a boundary aggregate")
 	}
 	if c.Manifest.AggregateOnlyUntilNS != 0 && (c.Manifest.AggregateOnlyUntilNS < c.Manifest.StartMonoNS || c.Manifest.AggregateOnlyUntilNS > c.Manifest.EndMonoNS) {
 		return c, fmt.Errorf("invalid aggregate-only window")

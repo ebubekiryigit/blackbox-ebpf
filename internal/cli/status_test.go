@@ -164,7 +164,7 @@ func TestStatusShowsPartialCoverageAndLifetimeCounters(t *testing.T) {
 		{
 			name:    "verbose diagnostics",
 			verbose: true,
-			want:    []string{"DIAGNOSTICS · SINCE DAEMON START", "Buffer rejected", "Start missing", "384 zero-byte logical WRITE completions", "Ingress detail drops", "Detailed segment compactions", "Aggregate history evictions"},
+			want:    []string{"DIAGNOSTICS · SINCE DAEMON START", "Buffer rejected", "Start missing", "384 zero-byte logical WRITE completions", "Ingress detail drops", "Detailed segments removed", "Aggregate history evictions"},
 			absent:  []string{"--verbose: lifetime counters"},
 		},
 	} {

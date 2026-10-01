@@ -116,7 +116,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 				fmt.Fprintln(&b)
 			}
 			if s.BudgetPruneFailures > 0 {
-				t.Notice(&b, terminal.Warning, fmt.Sprintf("%s: detail quota cleanup failures: %d", terminal.Sensor(s.Name), s.BudgetPruneFailures), "Interrupted cleanup is retried on the next poll. Aggregate metrics remain available; actual missing event details are counted separately as quota failures.")
+				t.Notice(&b, terminal.Warning, fmt.Sprintf("%s: detail quota cleanup failures: %d", terminal.Sensor(s.Name), s.BudgetPruneFailures), "Failed cleanup is retried on the next poll. Aggregate metrics remain available; actual missing event details are counted separately as quota failures.")
 				fmt.Fprintln(&b)
 			}
 		}
@@ -142,7 +142,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 				t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s: %s zero-byte logical WRITE completions excluded as bookkeeping; dispatched cache flushes are still measured.", terminal.Sensor(s.Name), terminal.Count(s.BookkeepingCompletions)))
 			}
 		}
-		t.Table(&b, "Recorder counter\tLifetime total", []string{fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Detailed segment compactions\t%d", h.EvictedSegments), fmt.Sprintf("Aggregate history evictions\t%d", h.AggregateEvictions), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures)}, nil)
+		t.Table(&b, "Recorder counter\tLifetime total", []string{fmt.Sprintf("Ingress detail drops\t%d", h.IngressDrops), fmt.Sprintf("Recorder observation drops\t%d", h.RecorderDrops), fmt.Sprintf("Detailed segments removed\t%d", h.EvictedSegments), fmt.Sprintf("Aggregate history evictions\t%d", h.AggregateEvictions), fmt.Sprintf("Unresolved process identities\t%d", h.MetadataFailures), fmt.Sprintf("Snapshot write failures\t%d", h.SnapshotFailures)}, nil)
 	}
 	fmt.Fprintln(&b)
 	if !verbose {

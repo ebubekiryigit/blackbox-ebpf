@@ -46,6 +46,18 @@ func TestKnownTCPResetCapabilityIsPreservedWithoutWindowWarning(t *testing.T) {
 	}
 }
 
+func TestReportExplainsExpandedAggregateWindow(t *testing.T) {
+	r := quietReport()
+	r.Manifest.RequestedStartMonoNS = r.Manifest.StartMonoNS + uint64(15*time.Second)
+	var out bytes.Buffer
+	if err := Render(&out, r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Window starts 15s before the request") || strings.Contains(out.String(), "Requested history was not fully retained") {
+		t.Fatalf("expanded aggregate interval was not explained:\n%s", out.String())
+	}
+}
+
 func TestAssessmentSeparatesSignalsAndEvidence(t *testing.T) {
 	cases := []struct {
 		name            string
