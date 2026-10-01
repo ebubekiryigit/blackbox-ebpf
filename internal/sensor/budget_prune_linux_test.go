@@ -18,10 +18,11 @@ func TestBudgetPruneFailurePolicy(t *testing.T) {
 		cause     error
 		retryable bool
 	}{
+		{"busy bucket", unix.EBUSY, true},
 		{"interrupted iteration", unix.EINTR, true},
 		{"temporarily unavailable", unix.EAGAIN, true},
-		{"closed map", unix.EBADF, false},
-		{"missing map", errors.New("detail budget map is missing"), false},
+		{"closed map", unix.EBADF, true},
+		{"missing map", errDetailBudgetMapMissing, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &kernelSensor{health: model.SensorHealth{Name: "scheduler", State: "healthy"}}

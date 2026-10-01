@@ -19,7 +19,6 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
-	"golang.org/x/sys/unix"
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
@@ -383,15 +382,15 @@ func normalize(w wireEvent) model.Event {
 	return e
 }
 func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
-	if err := s.pruneDetailBudgets(end); err != nil {
-		if err = s.handleBudgetPruneError(err); err != nil {
-			return model.Metric{}, err
-		}
-	}
 	key := uint32(0)
 	if e := s.collection.Maps["aggregates"].Lookup(key, s.perCPU); e != nil {
 		s.fail(e)
 		return model.Metric{}, e
+	}
+	if err := s.pruneDetailBudgets(end); err != nil {
+		if err = s.handleBudgetPruneError(err); err != nil {
+			return model.Metric{}, err
+		}
 	}
 	var sum wireStats
 	for _, v := range s.perCPU {
@@ -428,7 +427,7 @@ func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
 	return m, nil
 }
 func (s *kernelSensor) handleBudgetPruneError(err error) error {
-	if !errors.Is(err, unix.EINTR) && !errors.Is(err, unix.EAGAIN) {
+	if errors.Is(err, errDetailBudgetMapMissing) {
 		s.fail(err)
 		return err
 	}
@@ -439,6 +438,9 @@ func (s *kernelSensor) handleBudgetPruneError(err error) error {
 	s.mu.Unlock()
 	return nil
 }
+
+var errDetailBudgetMapMissing = errors.New("detail budget map is missing")
+
 func (s *kernelSensor) pruneDetailBudgets(end uint64) error {
 	sec := end / uint64(time.Second)
 	if sec == s.lastBudgetSweepSec {
@@ -446,7 +448,7 @@ func (s *kernelSensor) pruneDetailBudgets(end uint64) error {
 	}
 	m := s.collection.Maps["detail_budgets"]
 	if m == nil {
-		return fmt.Errorf("detail budget map is missing")
+		return errDetailBudgetMapMissing
 	}
 	s.staleBudgetKeys = s.staleBudgetKeys[:0]
 	var cursor, next uint64
