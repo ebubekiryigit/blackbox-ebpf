@@ -207,6 +207,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 	defer auto.close()
 	previous := now
 	disabled := map[string]bool{}
+	budgetPruneLogged := map[string]bool{}
 	health := func() model.Health {
 		h := r.Health()
 		if now >= h.RetainedFromNS {
@@ -263,6 +264,10 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 				}
 				logger.Error("sensor aggregation failed", "sensor", s.Name(), "error", er)
 				continue
+			}
+			if h := s.Health(); h.BudgetPruneFailures > 0 && !budgetPruneLogged[s.Name()] {
+				logger.Warn("detail budget cleanup interrupted; retrying on the next poll", "sensor", s.Name(), "failures", h.BudgetPruneFailures)
+				budgetPruneLogged[s.Name()] = true
 			}
 			if auto != nil {
 				auto.controller.Observe(m, end)

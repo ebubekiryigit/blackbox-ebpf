@@ -189,3 +189,19 @@ func TestStatusShowsRetainedSpanWithoutClaimingCoverage(t *testing.T) {
 		t.Fatalf("missing retention age was presented as zero:\n%s", out.String())
 	}
 }
+
+func TestStatusExplainsBudgetCleanupRetryWithoutCallingItLostDetail(t *testing.T) {
+	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy", BudgetPruneFailures: 2}}}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"RECORDER ACTIVE · COLLECTION NOTES", "Scheduler — Recording", "detail quota cleanup failures: 2", "Aggregate metrics remain"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status omitted %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "event details lost because quota state was unavailable") {
+		t.Fatalf("cleanup retry was mistaken for measured detail loss:\n%s", out.String())
+	}
+}

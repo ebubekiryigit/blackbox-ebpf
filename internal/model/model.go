@@ -77,6 +77,7 @@ type Segment struct {
 }
 type SensorHealth struct {
 	BookkeepingCompletions uint64   `json:"bookkeeping_completions,omitempty"`
+	BudgetPruneFailures    uint64   `json:"detail_budget_prune_failures,omitempty"`
 	KernelBytes            uint64   `json:"kernel_bytes,omitempty"`
 	KernelBytesKnown       bool     `json:"kernel_bytes_known"`
 	Name                   string   `json:"name"`

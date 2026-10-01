@@ -38,6 +38,9 @@ per-write directory scan/sort work.
 The control health response adds `retained_span_ns` without changing protocol
 version `1`; older clients ignore it, and a newer client hides the age line
 when talking to an older daemon that omits the field.
+Sensor health also adds the optional `detail_budget_prune_failures` lifetime
+counter. It records interrupted userspace quota cleanup without claiming event
+detail loss; older clients ignore it.
 
 The `.bbx` container is a checksummed zstd-compressed tar with a manifest, host
 metadata, ordered JSON segments, and a completion marker. Readers bound decoded

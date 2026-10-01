@@ -87,6 +87,22 @@ func TestBookkeepingDoesNotDegradeCoverage(t *testing.T) {
 	}
 }
 
+func TestBudgetCleanupRetryIsLifetimeDiagnosticNotCaptureGap(t *testing.T) {
+	r := quietReport()
+	r.Manifest.Health.Sensors[1].BudgetPruneFailures = 2
+	r = Analyze(captureReport(r))
+	if r.Assessment.EvidenceState != "complete" || r.Signals[1].Loss.DetailFailures != 0 {
+		t.Fatalf("cleanup retry was mistaken for lost evidence: %+v", r.Assessment)
+	}
+	var out bytes.Buffer
+	if err := RenderWithOptions(&out, r, RenderOptions{Verbose: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "detail quota cleanup failures since daemon start: 2") {
+		t.Fatalf("capture health diagnostic was hidden:\n%s", out.String())
+	}
+}
+
 func TestBoundaryEvidenceCountsPerSubsystemAndMissingDetails(t *testing.T) {
 	r := quietReport()
 	r.Signals[0].Anomalies = 4

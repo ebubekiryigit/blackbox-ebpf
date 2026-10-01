@@ -8,6 +8,13 @@ unavailable even on a newer kernel. Root and a privileged container are the curr
 supported privilege model; narrower capability configurations are not validated.
 A built binary needs no runtime compiler or kernel headers.
 
+An interrupted detail-quota map cleanup is retried at the next aggregate poll;
+aggregate recording continues and `status` counts failed cleanup attempts. The count is
+also saved in capture health and shown in verbose analysis. It is distinct from
+kernel `detail_budget_failures`, which count event details actually lost. A
+missing or invalid quota map remains a permanent sensor failure, including in
+strict mode.
+
 Compose runs with host PID, cgroup and network namespaces:
 
 | Path / setting | Use |

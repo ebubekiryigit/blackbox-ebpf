@@ -325,6 +325,9 @@ func diagnostics(w io.Writer, r Report, t terminal.Theme) {
 		for _, n := range model.CounterNotes(s.Name, s.Loss) {
 			t.Line(w, terminal.Muted, "  ", terminal.Sensor(s.Name)+": "+n.Title+". "+n.Explanation)
 		}
+		if s.BudgetPruneFailures > 0 {
+			t.Line(w, terminal.Muted, "  ", fmt.Sprintf("%s: detail quota cleanup failures since daemon start: %d; aggregate metrics continued. Actual missing details are counted separately as quota failures.", terminal.Sensor(s.Name), s.BudgetPruneFailures))
+		}
 		if s.BookkeepingCompletions > 0 {
 			t.Line(w, terminal.Muted, "  ", fmt.Sprintf("%s: %s zero-byte logical WRITE completions excluded from device I/O counts. Flush-sequence bookkeeping is not missing latency evidence; dispatched cache flushes are still measured.", terminal.Sensor(s.Name), terminal.Count(s.BookkeepingCompletions)))
 		}

@@ -16,7 +16,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	enabled, active := sensorCounts(h)
 	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
 	for _, s := range h.Sensors {
-		notes = notes || s.Loss != (model.Counters{})
+		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0
 	}
 	notes = notes || h.IngressDrops+h.RecorderDrops+h.MetadataFailures+h.SnapshotFailures+h.ClockChanges > 0
 	tone, title := terminal.Good, "RECORDER ACTIVE"
@@ -100,6 +100,10 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 		for _, s := range h.Sensors {
 			for _, n := range model.CounterNotes(s.Name, s.Loss) {
 				t.Notice(&b, terminal.Warning, terminal.Sensor(s.Name)+": "+n.Title, n.Explanation)
+				fmt.Fprintln(&b)
+			}
+			if s.BudgetPruneFailures > 0 {
+				t.Notice(&b, terminal.Warning, fmt.Sprintf("%s: detail quota cleanup failures: %d", terminal.Sensor(s.Name), s.BudgetPruneFailures), "Interrupted cleanup is retried on the next poll. Aggregate metrics remain available; actual missing event details are counted separately as quota failures.")
 				fmt.Fprintln(&b)
 			}
 		}

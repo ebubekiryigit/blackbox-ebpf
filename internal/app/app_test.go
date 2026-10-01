@@ -25,6 +25,12 @@ type failingSensor struct {
 	closes   int
 }
 
+type cleanupRetrySensor struct{ *failingSensor }
+
+func (s *cleanupRetrySensor) Health() model.SensorHealth {
+	return model.SensorHealth{Name: s.Name(), State: "healthy", BudgetPruneFailures: 1}
+}
+
 func TestSettingsRetainRecordingResources(t *testing.T) {
 	c := config.Default()
 	c.Resources.PollInterval = 2 * time.Second
@@ -379,6 +385,43 @@ func TestPermanentFailureStrictAndBestEffort(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBudgetCleanupRetryKeepsStrictSensorAndLogsOnce(t *testing.T) {
+	c := config.Default()
+	c.Strict = true
+	c.AutoCapture.Enabled = false
+	var logs bytes.Buffer
+	epoch := time.Now()
+	e := &Engine{
+		Config: c, logger: slog.New(slog.NewTextHandler(&logs, nil)),
+		sensors: []sensor.Sensor{&cleanupRetrySensor{&failingSensor{name: "scheduler"}}},
+		ingress: make(chan model.Event, 1), Queries: make(chan Query, 1),
+		clock:   func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil },
+		stopped: make(chan struct{}),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- e.Run(ctx) }()
+	for i := 0; i < 2; i++ {
+		result, err := e.Ask(ctx, time.Second)
+		if err != nil {
+			t.Fatalf("strict recording stopped after cleanup retry: %v", err)
+		}
+		if result.Capture.Manifest.Health.Sensors[0].BudgetPruneFailures != 1 {
+			t.Fatal("capture omitted quota cleanup diagnostic")
+		}
+		result.ReleaseSnapshot()
+	}
+	if got := strings.Count(logs.String(), "detail budget cleanup interrupted"); got != 1 {
+		t.Fatalf("expected one cleanup warning, got %d: %s", got, logs.String())
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("unexpected daemon exit: %v", err)
+	}
+	e.Close()
 }
 
 type burstSensor struct{}
