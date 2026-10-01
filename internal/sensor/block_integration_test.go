@@ -5,8 +5,6 @@ package sensor
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"testing"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
+	"github.com/ebubekiryigit/blackbox-ebpf/test/kernelworkload"
 )
 
 // Exercise the real completion lifecycle, including zero-byte hardware FLUSH.
@@ -44,11 +43,7 @@ func TestBlockFlushSequencingAndRealTrackingLoss(t *testing.T) {
 	if _, err = s.Snapshot(0, 0); err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Create(filepath.Join(t.TempDir(), "fsync-workload"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
+	f := kernelworkload.Open(t)
 	workload := func(n int) {
 		data := make([]byte, 64<<10)
 		for i := 0; i < n; i++ {

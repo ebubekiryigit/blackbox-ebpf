@@ -5,9 +5,11 @@ package integration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/control"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
+	"github.com/ebubekiryigit/blackbox-ebpf/test/kernelworkload"
 )
 
 func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
@@ -70,12 +73,12 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 			t.Fatal("socket not ready")
 		}
 	}
-	// Small ephemeral writes and active TCP resets exercise actual host hooks.
-	f, err := os.Create(filepath.Join(dir, "io-workload"))
-	if err != nil {
+	// Socket listening alone does not mean sensor startup counters were reset.
+	if _, err := engine.Ask(ctx, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	// Small ephemeral writes and active TCP resets exercise actual host hooks.
+	f := kernelworkload.Open(t)
 	data := make([]byte, 64<<10)
 	for i := 0; i < 16; i++ {
 		if _, err = f.Write(data); err != nil {
@@ -85,6 +88,7 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	kernelworkload.Scheduling(t)
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -103,25 +107,40 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 		client.Close()
 		server.Close()
 	}
-	// Exercise the IPv6 schema against the actual socket CO-RE reads.
-	ipv6, er := net.Listen("tcp6", "[::1]:0")
-	if er != nil {
-		t.Fatalf("IPv6 loopback required by this integration scenario: %v", er)
-	}
-	client6, er := net.Dial("tcp6", ipv6.Addr().String())
-	if er != nil {
-		t.Fatal(er)
-	}
-	server6, er := ipv6.Accept()
-	if er != nil {
-		t.Fatal(er)
-	}
-	resetSource6 := *client6.LocalAddr().(*net.TCPAddr)
-	resetDestination6 := *client6.RemoteAddr().(*net.TCPAddr)
-	_ = client6.(*net.TCPConn).SetLinger(0)
-	client6.Close()
-	server6.Close()
-	ipv6.Close()
+	var resetSource6, resetDestination6 *net.TCPAddr
+	t.Run("IPv6 workload", func(t *testing.T) {
+		ipv6, er := net.Listen("tcp6", "[::1]:0")
+		if er != nil {
+			t.Skipf("IPv6 loopback is unavailable: %v", er)
+		}
+		defer ipv6.Close()
+		client6, er := net.Dial("tcp6", ipv6.Addr().String())
+		if er != nil {
+			t.Fatal(er)
+		}
+		defer client6.Close()
+		server6, er := ipv6.Accept()
+		if er != nil {
+			t.Fatal(er)
+		}
+		defer server6.Close()
+		resetSource6 = client6.LocalAddr().(*net.TCPAddr)
+		resetDestination6 = client6.RemoteAddr().(*net.TCPAddr)
+		if er = client6.(*net.TCPConn).SetLinger(0); er != nil {
+			t.Fatal(er)
+		}
+		if er = client6.Close(); er != nil {
+			t.Fatal(er)
+		}
+		// Keep the receiving socket alive until its reset hook has run. Closing
+		// both endpoints immediately can discard the incoming reset first.
+		if er = server6.SetReadDeadline(time.Now().Add(2 * time.Second)); er != nil {
+			t.Fatal(er)
+		}
+		if _, er = server6.Read(make([]byte, 1)); !errors.Is(er, syscall.ECONNRESET) {
+			t.Fatalf("IPv6 peer did not receive the abortive-close reset: %v", er)
+		}
+	})
 	time.Sleep(2100 * time.Millisecond)
 	status, err := control.Call(ctx, cfg.Socket, control.Request{Operation: "status"}, nil)
 	if err != nil {
@@ -147,6 +166,7 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 	if recorded.Manifest.FormatVersion != model.FormatVersion || recorded.Host.ClockSource != "boottime" {
 		t.Fatalf("live capture did not declare its boottime clock: format=%d source=%q", recorded.Manifest.FormatVersion, recorded.Host.ClockSource)
 	}
+	t.Logf("recorded kernel=%s architecture=%s", recorded.Host.Kernel, recorded.Host.Architecture)
 	if delta := time.Since(recorded.Host.Wall(recorded.Manifest.EndMonoNS)); delta < -10*time.Second || delta > 10*time.Second {
 		t.Fatalf("snapshot end was not mapped to current realtime: delta=%s", delta)
 	}
@@ -177,18 +197,20 @@ func TestKernelDaemonSnapshotAnalyze(t *testing.T) {
 	if critical == 0 || report.Assessment.Severity != "critical" {
 		t.Fatal("critical latency aggregate did not survive daemon, snapshot and analysis")
 	}
-	seenSent6, seenReceived6 := false, false
-	for _, ev := range report.Timeline {
-		if ev.Type == "tcp_reset" && ev.SourceIP == resetSource6.IP.String() && ev.DestinationIP == resetDestination6.IP.String() && ev.SourcePort == uint16(resetSource6.Port) && ev.DestinationPort == uint16(resetDestination6.Port) {
-			if ev.EndpointSource != "socket" || ev.SocketContext != "socket" || ev.PID != 0 || ev.TGID != 0 || ev.Comm != "" {
-				t.Fatalf("TCP provenance or ownership changed through snapshot/capture: %+v", ev)
+	if resetSource6 != nil {
+		seenSent6, seenReceived6 := false, false
+		for _, ev := range report.Timeline {
+			if ev.Type == "tcp_reset" && ev.SourceIP == resetSource6.IP.String() && ev.DestinationIP == resetDestination6.IP.String() && ev.SourcePort == uint16(resetSource6.Port) && ev.DestinationPort == uint16(resetDestination6.Port) {
+				if ev.EndpointSource != "socket" || ev.SocketContext != "socket" || ev.PID != 0 || ev.TGID != 0 || ev.Comm != "" {
+					t.Fatalf("TCP provenance or ownership changed through snapshot/capture: %+v", ev)
+				}
+				seenSent6 = seenSent6 || ev.TCPDirection == "sent"
+				seenReceived6 = seenReceived6 || ev.TCPDirection == "received"
 			}
-			seenSent6 = seenSent6 || ev.TCPDirection == "sent"
-			seenReceived6 = seenReceived6 || ev.TCPDirection == "received"
 		}
-	}
-	if !seenSent6 || !seenReceived6 {
-		t.Fatalf("IPv6 reset tuple/direction missing after capture read: sent=%v received=%v", seenSent6, seenReceived6)
+		if !seenSent6 || !seenReceived6 {
+			t.Fatalf("IPv6 reset tuple/direction missing after capture read: sent=%v received=%v", seenSent6, seenReceived6)
+		}
 	}
 	if len(report.Timeline) == 0 {
 		t.Fatal("no anomaly details")

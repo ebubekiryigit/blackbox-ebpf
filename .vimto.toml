@@ -1,0 +1,12 @@
+# CI-only guests: never run this setup on the host.
+# The kernel images have no ext4; loop I/O still exercises real block requests.
+memory = "size=1G"
+smp = "cpus=2"
+user = "root"
+setup = [
+  "ip link set lo up",
+  "sh -eu -c 'truncate -s 64M /tmp/blackbox-kernel-test.img; losetup /dev/loop0 /tmp/blackbox-kernel-test.img'",
+  # The delayed-poll regression needs 70 completed BOOTTIME seconds.
+  "sleep 70",
+]
+teardown = ["losetup -d /dev/loop0"]

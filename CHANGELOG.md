@@ -18,7 +18,10 @@
 - Move process metadata resolution to each sensor's existing reader goroutine so
   slow `/proc` reads cannot block aggregate polling or local control requests.
 - Report limited or unknown socketless TCP sent-reset coverage from the kernel
-  BTF signature in status, captures and analysis. Retry transient detail-budget
+  BTF signature in status, captures and analysis. Known capability limitations
+  remain separate from collection-gap warnings; unknown capability stays a
+  warning. Preserve packet peer tuples for resets sent by listening sockets.
+  Retry nonstructural detail-budget
   cleanup failures without disabling valid aggregate sensors.
 - On kernels whose retransmit tracepoint includes an error argument, exclude
   failed send attempts from TCP retransmit counts.
@@ -28,7 +31,12 @@
 - Under the fixed recorder budget, keep event details as long as `history` and
   memory permit, then fold the oldest segments into aggregate-only summaries.
   Status reports actual detailed and aggregate spans; captures and reports mark
-  the portion whose individual details were compacted.
+  the portion whose individual details were compacted. Preserve complete rollups
+  crossing a requested start, with requested and actual windows shown separately.
+  Individual details keep the requested BOOTTIME boundary; delayed details in
+  newer receipt-time segments remain selectable for their observation window.
+- Run kernel integration in disposable x86_64 QEMU guests: 5.10, 6.1 and 6.12
+  on PR/main, with 5.15, 6.6 and current stable added for manual/tag runs.
 - Record the scheduler tracking-map capacity in new capture manifests.
 - Remove the misleading `max_memory` YAML/CLI setting. Recorder history keeps a
   fixed 32 MiB accounting budget; existing configs must remove `max_memory`

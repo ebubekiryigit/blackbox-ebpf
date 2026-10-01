@@ -45,7 +45,8 @@ regressions exercise a fresh synthetic capture through offline analysis and conf
 inspection. They require no BPF privileges; socket tests need local Unix sockets.
 
 Kernel tests load every enabled sensor, exercise fsync flush bookkeeping and genuine
-tracking-map exhaustion, scheduler activity and IPv4/IPv6 reset tuples, and verify
+tracking-map exhaustion, bounded runnable-wait contention and IPv4/IPv6 reset
+tuples, and verify
 OOM attachment without inducing a host OOM. A daemon → socket → snapshot → analyzer
 scenario uses non-default resource settings. Automatic capture integration generates
 bounded disk/scheduler activity and reads a real automatically published capture. Tests use their own BPF objects, files
@@ -55,8 +56,32 @@ Do not restart existing recordings or disturb remote workloads for tests.
 Commit `*_bpfel.go`, `*_bpfel.o` and `bpf/abi.h` together. Regenerate using the
 developer tools image to avoid compiler-version drift. CI checks regeneration
 and performs portable checks on Linux/macOS. Kernel CI runs for pull requests and
-pushes to `main` on an ephemeral privileged runner; local checks do not replace
+pushes to `main` in disposable x86_64 QEMU guests using kernels 5.10, 6.1 and
+6.12. Manual workflow runs and `v*` tag pushes add 5.15, 6.6 and the current
+stable kernel. Kernel images are the Cilium CI minor/stable channels; logs record
+the resolved image digest and actual guest kernel, rather than treating a channel
+as an exact patch version. Local checks do not replace
 the server compatibility/load matrix.
+
+The guest setup in `.vimto.toml` enables loopback networking and creates a private
+64 MiB loop device. Disk tests use it because the Cilium guest root is 9p/tmpfs
+and has no ext4; ordinary `make integration` still uses disposable filesystem
+files on the host kernel. Guest setup waits 70 seconds so the delayed quota-prune
+regression runs rather than skipping for insufficient uptime. Unsupported
+socketless reset expectations skip with the BTF capability reason; enabled
+sensor loading and socket-backed tests still have to pass.
+
+On an x86_64 Linux development host with Go, QEMU, iproute2 and util-linux:
+
+```sh
+CGO_ENABLED=0 go install lmb.io/vimto@v0.4.0
+BLACKBOX_TEST_BLOCK_DEVICE=/dev/loop0 vimto -kernel ghcr.io/cilium/ci-kernels:6.12 -- go test -tags integration -count=1 -timeout=10m -p=1 -v ./test/integration ./internal/sensor
+```
+
+The environment variable is only for the disposable guest. Tests refuse any
+other device or a loop device not backed by the dedicated scratch image.
+Kernel channels exercise kernel APIs, not distro packaging, systemd defaults or
+vendor backports. Broader distro and production-load validation remains separate.
 
 Recorder benchmarks do not measure full daemon RSS, kernel hook overhead or
 production CPU. Compare repeated runs on the same hardware. Report workload,
