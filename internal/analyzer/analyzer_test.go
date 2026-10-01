@@ -48,10 +48,10 @@ func TestCorrelationRequiresKnownIdentity(t *testing.T) {
 func TestWindowLossIsIndependentOfLifetimeHealth(t *testing.T) {
 	c := model.Capture{
 		Manifest: model.Manifest{Health: model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy", Loss: model.Counters{Unmatched: 57}}}}},
-		Segments: []model.Segment{{Metrics: []model.Metric{{Family: "scheduler", StartMonoNS: 1, EndMonoNS: 2, Loss: model.Counters{Unmatched: 2, Suppressed: 3, DecodeFailures: 1}}, {Family: "scheduler", StartMonoNS: 2, EndMonoNS: 3, Loss: model.Counters{Unmatched: 4, DecodeFailures: 2}}}}},
+		Segments: []model.Segment{{Metrics: []model.Metric{{Family: "scheduler", StartMonoNS: 1, EndMonoNS: 2, Loss: model.Counters{Unmatched: 2, Suppressed: 3, DetailFailures: 1, DecodeFailures: 1}}, {Family: "scheduler", StartMonoNS: 2, EndMonoNS: 3, Loss: model.Counters{Unmatched: 4, DetailFailures: 2, DecodeFailures: 2}}}}},
 	}
 	r := Analyze(c)
-	if s := r.Signals[1]; s.Loss.Unmatched != 6 || s.Loss.Suppressed != 3 || s.Loss.DecodeFailures != 3 {
+	if s := r.Signals[1]; s.Loss.Unmatched != 6 || s.Loss.Suppressed != 3 || s.Loss.DetailFailures != 3 || s.Loss.DecodeFailures != 3 {
 		t.Fatalf("wrong window counters: %+v", s.Loss)
 	}
 	if r.Manifest.Health.Sensors[0].Loss.Unmatched != 57 {

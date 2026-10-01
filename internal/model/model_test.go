@@ -73,6 +73,7 @@ func TestCounterNotesExplainCoverageWithoutInventingCause(t *testing.T) {
 		{"block_io", "tracking_failures", "1 start record could not be saved", Counters{TrackingFailures: 1}},
 		{"block_io", "ring_reserve_failures", "2 event details could not enter the kernel buffer", Counters{RingFailures: 2}},
 		{"tcp", "detail_suppressed", "1 event detail skipped by the rate limit", Counters{Suppressed: 1}},
+		{"scheduler", "detail_budget_failures", "1 event detail lost because quota state was unavailable", Counters{DetailFailures: 1}},
 		{"oom", "detail_decode_failures", "2 event details could not be decoded", Counters{DecodeFailures: 2}},
 	} {
 		t.Run(tc.sensor+"/"+tc.counter, func(t *testing.T) {

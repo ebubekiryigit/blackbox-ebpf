@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,39 @@ type failingSensor struct {
 	startErr error
 	failed   bool
 	closes   int
+}
+
+func TestSettingsRetainRecordingResources(t *testing.T) {
+	c := config.Default()
+	c.Resources.PollInterval = 2 * time.Second
+	c.Resources.SegmentInterval = 3 * time.Second
+	c.Resources.IngressEvents = 42
+	c.Resources.MetadataEntries = 43
+	c.Resources.BlockTrackingEntries = 44
+	c.Resources.SchedulerTrackingEntries = 45
+	c.Resources.RingBytes = 128 << 10
+	got := (&Engine{Config: c}).Settings()
+	want := model.RecordingSettings{
+		HistoryNS:                uint64(c.History),
+		MaxMemory:                c.RecorderBudgetBytes,
+		BlockThresholdNS:         uint64(c.BlockThreshold),
+		SchedulerThresholdNS:     uint64(c.SchedulerThreshold),
+		BlockCriticalNS:          uint64(c.BlockCritical),
+		SchedulerCriticalNS:      uint64(c.SchedulerCritical),
+		DetailRate:               c.DetailRate,
+		Enabled:                  c.Enabled,
+		Strict:                   c.Strict,
+		PollIntervalNS:           uint64(c.Resources.PollInterval),
+		SegmentIntervalNS:        uint64(c.Resources.SegmentInterval),
+		IngressEvents:            c.Resources.IngressEvents,
+		MetadataEntries:          c.Resources.MetadataEntries,
+		BlockTrackingEntries:     c.Resources.BlockTrackingEntries,
+		SchedulerTrackingEntries: c.Resources.SchedulerTrackingEntries,
+		RingBytes:                c.Resources.RingBytes,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("recording settings mismatch: got %+v, want %+v", got, want)
+	}
 }
 
 type gatedStartSensor struct {

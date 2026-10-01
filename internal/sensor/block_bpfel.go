@@ -57,6 +57,7 @@ type blockStats struct {
 	Resets                 uint64
 	RingFailures           uint64
 	Suppressed             uint64
+	DetailBudgetFailures   uint64
 	TrackingFailures       uint64
 	Unmatched              uint64
 	BookkeepingCompletions uint64

@@ -317,9 +317,9 @@ func diagnostics(w io.Writer, r Report, t terminal.Theme) {
 	t.Section(w, "DIAGNOSTICS · SINCE DAEMON START")
 	rows := make([]string, 0, len(r.Manifest.Health.Sensors))
 	for _, s := range r.Manifest.Health.Sensors {
-		rows = append(rows, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s", terminal.Sensor(s.Name), s.State, terminal.Count(s.Loss.RingFailures), terminal.Count(s.Loss.Suppressed), terminal.Count(s.Loss.TrackingFailures), terminal.Count(s.Loss.Unmatched), terminal.Count(s.Loss.DecodeFailures)))
+		rows = append(rows, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", terminal.Sensor(s.Name), s.State, terminal.Count(s.Loss.RingFailures), terminal.Count(s.Loss.Suppressed), terminal.Count(s.Loss.DetailFailures), terminal.Count(s.Loss.TrackingFailures), terminal.Count(s.Loss.Unmatched), terminal.Count(s.Loss.DecodeFailures)))
 	}
-	t.Table(w, "Sensor\tState\tBuffer rejected\tRate limited\tStart unsaved\tStart missing\tDetail invalid", rows, nil)
+	t.Table(w, "Sensor\tState\tBuffer rejected\tRate limited\tQuota failed\tStart unsaved\tStart missing\tDetail invalid", rows, nil)
 	t.Line(w, terminal.Muted, "  ", "These totals include activity outside this window; they are not additional window losses.")
 	for _, s := range r.Manifest.Health.Sensors {
 		for _, n := range model.CounterNotes(s.Name, s.Loss) {

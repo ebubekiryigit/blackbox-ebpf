@@ -49,6 +49,7 @@ type Event struct {
 type Counters struct {
 	RingFailures     uint64 `json:"ring_reserve_failures"`
 	Suppressed       uint64 `json:"detail_suppressed"`
+	DetailFailures   uint64 `json:"detail_budget_failures,omitempty"`
 	TrackingFailures uint64 `json:"tracking_failures"`
 	Unmatched        uint64 `json:"unmatched_completions"`
 	DecodeFailures   uint64 `json:"detail_decode_failures,omitempty"`
@@ -134,23 +135,23 @@ func (h Host) ValidateClock() error {
 }
 
 type RecordingSettings struct {
-	PollIntervalNS           uint64   `json:"poll_interval_ns,omitempty"`
-	SegmentIntervalNS        uint64   `json:"segment_interval_ns,omitempty"`
-	IngressEvents            int      `json:"ingress_events,omitempty"`
-	MetadataEntries          int      `json:"metadata_entries,omitempty"`
-	BlockTrackingEntries     uint32   `json:"block_tracking_entries,omitempty"`
-	SchedulerTrackingEntries uint32   `json:"scheduler_tracking_entries,omitempty"`
-	RingBytes                uint32   `json:"ring_bytes,omitempty"`
-	HistoryNS                uint64   `json:"history_ns"`
+	PollIntervalNS           uint64 `json:"poll_interval_ns,omitempty"`
+	SegmentIntervalNS        uint64 `json:"segment_interval_ns,omitempty"`
+	IngressEvents            int    `json:"ingress_events,omitempty"`
+	MetadataEntries          int    `json:"metadata_entries,omitempty"`
+	BlockTrackingEntries     uint32 `json:"block_tracking_entries,omitempty"`
+	SchedulerTrackingEntries uint32 `json:"scheduler_tracking_entries,omitempty"`
+	RingBytes                uint32 `json:"ring_bytes,omitempty"`
+	HistoryNS                uint64 `json:"history_ns"`
 	// This existing archive field is the recorder's retained-byte budget, not RSS.
-	MaxMemory                int64    `json:"max_memory"`
-	BlockThresholdNS         uint64   `json:"block_threshold_ns"`
-	SchedulerThresholdNS     uint64   `json:"scheduler_threshold_ns"`
-	BlockCriticalNS          uint64   `json:"block_critical_ns,omitempty"`
-	SchedulerCriticalNS      uint64   `json:"scheduler_critical_ns,omitempty"`
-	DetailRate               uint32   `json:"detail_rate"`
-	Enabled                  []string `json:"enabled_sensors"`
-	Strict                   bool     `json:"strict"`
+	MaxMemory            int64    `json:"max_memory"`
+	BlockThresholdNS     uint64   `json:"block_threshold_ns"`
+	SchedulerThresholdNS uint64   `json:"scheduler_threshold_ns"`
+	BlockCriticalNS      uint64   `json:"block_critical_ns,omitempty"`
+	SchedulerCriticalNS  uint64   `json:"scheduler_critical_ns,omitempty"`
+	DetailRate           uint32   `json:"detail_rate"`
+	Enabled              []string `json:"enabled_sensors"`
+	Strict               bool     `json:"strict"`
 }
 
 type Manifest struct {

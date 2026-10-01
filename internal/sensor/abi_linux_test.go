@@ -9,6 +9,8 @@ import (
 
 	"strings"
 
+	"github.com/cilium/ebpf"
+
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/config"
 	"github.com/ebubekiryigit/blackbox-ebpf/internal/model"
 )
@@ -25,6 +27,9 @@ func TestEmbeddedWireABIAndConfiguredMapBudgets(t *testing.T) {
 		}
 		if int(spec.Maps["aggregates"].ValueSize) != binary.Size(wireStats{}) {
 			t.Fatalf("%s stats wire ABI mismatch", def.name)
+		}
+		if budget := spec.Maps["detail_budgets"]; budget.Type != ebpf.Hash || budget.MaxEntries != 64 {
+			t.Fatalf("%s detail quota must be shared and non-evicting: %+v", def.name, budget)
 		}
 		if spec.Maps["details"].MaxEntries != 1 {
 			t.Fatal("embedded map has stale operational defaults; run make generate")

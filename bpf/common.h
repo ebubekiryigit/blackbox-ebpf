@@ -21,7 +21,6 @@ typedef __u32 __wsum;
 #define CORE __attribute__((preserve_access_index))
 #define BPF_MAP_TYPE_HASH 1
 #define BPF_MAP_TYPE_PERCPU_ARRAY 6
-#define BPF_MAP_TYPE_LRU_HASH 9
 #define BPF_MAP_TYPE_RINGBUF 27
 #define BPF_ANY 0
 #define BPF_NOEXIST 1
@@ -57,6 +56,7 @@ struct stats {
   __u64 resets;
   __u64 ring_failures;
   __u64 suppressed;
+  __u64 detail_budget_failures;
   __u64 tracking_failures;
   __u64 unmatched;
   __u64 bookkeeping_completions;
@@ -98,8 +98,10 @@ struct {
   __uint(max_entries, 1);
 } details SEC(".maps");
 struct {
-  __uint(type, BPF_MAP_TYPE_LRU_HASH);
-  __uint(max_entries, 4);
+  // Never evict the active second: eviction would reset its shared quota.
+  // Userspace removes expired seconds during aggregate polling.
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 64);
   __type(key, __u64);
   __type(value, struct detail_budget);
 } detail_budgets SEC(".maps");
@@ -129,13 +131,13 @@ static __always_inline int allowed(struct stats *s, __u64 ns) {
     struct detail_budget empty = {};
     int rc = bpf_map_update_elem(&detail_budgets, &sec, &empty, BPF_NOEXIST);
     if (rc && rc != -17) {
-      __sync_fetch_and_add(&s->tracking_failures, 1);
+      __sync_fetch_and_add(&s->detail_budget_failures, 1);
       return 0;
     }
     budget = bpf_map_lookup_elem(&detail_budgets, &sec);
   }
   if (!budget) {
-    __sync_fetch_and_add(&s->tracking_failures, 1);
+    __sync_fetch_and_add(&s->detail_budget_failures, 1);
     return 0;
   }
   if (budget->used >= detail_rate) {

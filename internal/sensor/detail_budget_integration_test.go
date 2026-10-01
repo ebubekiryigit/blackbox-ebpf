@@ -3,6 +3,7 @@
 package sensor
 
 import (
+	"errors"
 	"runtime"
 	"testing"
 	"time"
@@ -51,5 +52,28 @@ func TestSharedDetailBudgetSuppressesWithoutLosingAggregates(t *testing.T) {
 	}
 	if m.Count == 0 || m.Anomalies == 0 || m.Loss.Suppressed == 0 {
 		t.Fatalf("shared quota hid aggregate activity or did not suppress details: %+v", m)
+	}
+	if now.Sec < 4 {
+		t.Skip("kernel uptime is too short to test expired budget removal")
+	}
+	old := uint64(now.Sec - 3)
+	if err := budget.Update(old, uint64(1), ebpf.UpdateAny); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Snapshot(1, uint64(now.Sec)*uint64(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var used uint64
+	if err := budget.Lookup(old, &used); !errors.Is(err, ebpf.ErrKeyNotExist) {
+		t.Fatalf("expired budget survived aggregate poll: %v", err)
+	}
+	if err := budget.Lookup(uint64(now.Sec), &used); err != nil {
+		t.Fatalf("active budget was removed: %v", err)
+	}
+	if used < uint64(cfg.DetailRate) {
+		t.Fatalf("active budget was reset during cleanup: used=%d", used)
 	}
 }

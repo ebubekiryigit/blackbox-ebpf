@@ -29,6 +29,7 @@ func CounterNotes(sensor string, c Counters) []CounterNote {
 	add("tracking_failures", c.TrackingFailures, "start record could not be saved", "start records could not be saved", "The sensor could not retain tracking state (tracking failures). Some latency measurements may therefore be missing.")
 	add("ring_reserve_failures", c.RingFailures, "event detail could not enter the kernel buffer", "event details could not enter the kernel buffer", "The detail buffer could not reserve space (ring reserve failures). Aggregate counts remain available, but these individual events cannot be inspected.")
 	add("detail_suppressed", c.Suppressed, "event detail skipped by the rate limit", "event details skipped by the rate limit", "The configured detail quota was reached (detail suppressed). Aggregate counts and histograms still include these observations; individual details were intentionally omitted.")
+	add("detail_budget_failures", c.DetailFailures, "event detail lost because quota state was unavailable", "event details lost because quota state was unavailable", "The kernel could not access the shared detail quota. Aggregate counts and histograms remain available; these individual details are missing, not intentionally rate limited.")
 	add("detail_decode_failures", c.DecodeFailures, "event detail could not be decoded", "event details could not be decoded", "Userspace rejected a malformed or unknown detail record. Aggregate counts and histograms remain available, but these individual events cannot be inspected.")
 	return out
 }

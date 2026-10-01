@@ -96,6 +96,7 @@ func Analyze(c model.Capture) Report {
 			s.CoveredNS += m.EndMonoNS - m.StartMonoNS
 			s.Loss.RingFailures += m.Loss.RingFailures
 			s.Loss.Suppressed += m.Loss.Suppressed
+			s.Loss.DetailFailures += m.Loss.DetailFailures
 			s.Loss.TrackingFailures += m.Loss.TrackingFailures
 			s.Loss.Unmatched += m.Loss.Unmatched
 			s.Loss.DecodeFailures += m.Loss.DecodeFailures

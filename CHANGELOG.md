@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Discard stale scheduler wakeups when a task blocks, avoiding false long
+  runnable-wait latencies. Decode OOM victim identity for both supported kernel
+  tracepoint signatures, with PID-only evidence where the older signature lacks
+  a task pointer.
+- Treat the root cgroup as an unknown shared identity for correlation. Use the
+  host cgroup namespace in Compose so process cgroup paths match the host.
+- Share each sensor's detail quota across CPUs. Keep active-second quota state
+  in a non-evicting map, reclaim old seconds during aggregate polling, and
+  report quota-state failures separately from missing latency start records.
+- Avoid repeating the full lookback in consecutive successful automatic
+  captures while retaining trigger intervals that cross a file boundary.
+- Record the scheduler tracking-map capacity in new capture manifests.
 - Remove the misleading `max_memory` YAML/CLI setting. Recorder history keeps a
   fixed 32 MiB accounting budget; existing configs must remove `max_memory`
   before upgrade. This budget does not cap process RSS. The automatic storage
@@ -11,8 +23,9 @@
 - Detect significant local realtime-to-boottime offset changes without stopping
   recording. Show the latest change in status, captures, and reports; use a
   current clock sample for UTC presentation without historical clock repair.
-- Keep the pre-v1 `.bbx` format number at 1. Earlier development captures with
-  different clock semantics are not guaranteed compatible.
+- Keep the pre-v1 `.bbx` format number at 1. Development captures without an
+  explicit clock source are rejected; analyze them with the version that wrote
+  them.
 
 ## 0.2.0 - 2026-09-25
 

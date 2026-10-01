@@ -31,6 +31,7 @@ func TestAssessmentSeparatesSignalsAndEvidence(t *testing.T) {
 		{"quiet", func(*Report) {}, terminal.Good, "NO ANOMALIES OBSERVED", "no collection gaps"},
 		{"missing I/O starts", func(r *Report) { r.Signals[0].Loss.Unmatched = 11 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
 		{"invalid detail", func(r *Report) { r.Signals[1].Loss.DecodeFailures = 2 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
+		{"quota state unavailable", func(r *Report) { r.Signals[1].Loss.DetailFailures = 2 }, terminal.Warning, "EVIDENCE LIMITED", "incomplete"},
 		{"historical loss only", func(r *Report) { r.Manifest.Health.Sensors[0].Loss.Unmatched = 48 }, terminal.Good, "NO ANOMALIES OBSERVED", "no collection gaps"},
 		{"slow I/O", func(r *Report) { r.Signals[0].Anomalies = 1 }, terminal.Warning, "SIGNALS TO REVIEW", "incomplete"},
 		{"OOM aggregate without detail", func(r *Report) { r.Signals[3].Count = 1 }, terminal.Critical, "OOM VICTIMS", "incomplete"},

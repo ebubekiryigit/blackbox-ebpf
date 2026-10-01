@@ -322,6 +322,7 @@ Collection notes explain the consequence of each nonzero counter:
 | **Tracking failures / start unsaved** | Tracking state could not be retained. Some latency measurements may be missing. |
 | **Ring reserve failures / buffer rejected** | The kernel detail buffer could not accept an event. Aggregate counts remain available; individual detail is missing. |
 | **Detail suppressed / rate limited** | The bounded detail quota intentionally omitted events. Counts and histograms still include them. |
+| **Detail budget failures / quota failed** | The kernel could not access quota state. The detail was lost, not rate limited; aggregate counts and histograms remain available. |
 | **Detail decode failures / detail invalid** | Userspace rejected a malformed or unknown detail record. Aggregate counts and histograms remain available; individual detail is missing. |
 
 Current-window collection notes sum sensor deltas in complete captured metric

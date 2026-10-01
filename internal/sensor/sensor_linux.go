@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
@@ -26,7 +27,8 @@ import (
 type wireStats struct {
 	Histogram                                              model.Histogram
 	Count, Anomalies, Critical, Bytes, Retransmits, Resets uint64
-	RingFailures, Suppressed, TrackingFailures, Unmatched  uint64
+	RingFailures, Suppressed, DetailFailures               uint64
+	TrackingFailures, Unmatched                            uint64
 	BookkeepingCompletions                                 uint64
 }
 type wireEvent struct {
@@ -38,19 +40,21 @@ type wireEvent struct {
 	Padding                                            [4]byte
 }
 type kernelSensor struct {
-	name           string
-	collection     *ebpf.Collection
-	links          []link.Link
-	reader         *ringbuf.Reader
-	previous       wireStats
-	perCPU         []wireStats
-	mu             sync.Mutex
-	health         model.SensorHealth
-	done           sync.WaitGroup
-	closeOnce      sync.Once
-	closeErr       error
-	decodeFailures atomic.Uint64
-	previousDecode uint64
+	name               string
+	collection         *ebpf.Collection
+	links              []link.Link
+	reader             *ringbuf.Reader
+	previous           wireStats
+	perCPU             []wireStats
+	mu                 sync.Mutex
+	health             model.SensorHealth
+	done               sync.WaitGroup
+	closeOnce          sync.Once
+	closeErr           error
+	decodeFailures     atomic.Uint64
+	previousDecode     uint64
+	lastBudgetSweepSec uint64
+	staleBudgetKeys    []uint64
 }
 
 func (s *kernelSensor) Name() string { return s.name }
@@ -378,6 +382,10 @@ func normalize(w wireEvent) model.Event {
 	return e
 }
 func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
+	if err := s.pruneDetailBudgets(end); err != nil {
+		s.fail(err)
+		return model.Metric{}, err
+	}
 	key := uint32(0)
 	if e := s.collection.Maps["aggregates"].Lookup(key, s.perCPU); e != nil {
 		s.fail(e)
@@ -396,6 +404,7 @@ func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
 		sum.Resets += v.Resets
 		sum.RingFailures += v.RingFailures
 		sum.Suppressed += v.Suppressed
+		sum.DetailFailures += v.DetailFailures
 		sum.TrackingFailures += v.TrackingFailures
 		sum.Unmatched += v.Unmatched
 		sum.BookkeepingCompletions += v.BookkeepingCompletions
@@ -403,7 +412,7 @@ func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
 	p := s.previous
 	s.previous = sum
 	decodeFailures := s.decodeFailures.Load()
-	m := model.Metric{Family: s.name, StartMonoNS: start, EndMonoNS: end, Count: delta(sum.Count, p.Count), Anomalies: delta(sum.Anomalies, p.Anomalies), Bytes: delta(sum.Bytes, p.Bytes), Retransmits: delta(sum.Retransmits, p.Retransmits), Resets: delta(sum.Resets, p.Resets), Loss: model.Counters{RingFailures: delta(sum.RingFailures, p.RingFailures), Suppressed: delta(sum.Suppressed, p.Suppressed), TrackingFailures: delta(sum.TrackingFailures, p.TrackingFailures), Unmatched: delta(sum.Unmatched, p.Unmatched), DecodeFailures: delta(decodeFailures, s.previousDecode)}}
+	m := model.Metric{Family: s.name, StartMonoNS: start, EndMonoNS: end, Count: delta(sum.Count, p.Count), Anomalies: delta(sum.Anomalies, p.Anomalies), Bytes: delta(sum.Bytes, p.Bytes), Retransmits: delta(sum.Retransmits, p.Retransmits), Resets: delta(sum.Resets, p.Resets), Loss: model.Counters{RingFailures: delta(sum.RingFailures, p.RingFailures), Suppressed: delta(sum.Suppressed, p.Suppressed), DetailFailures: delta(sum.DetailFailures, p.DetailFailures), TrackingFailures: delta(sum.TrackingFailures, p.TrackingFailures), Unmatched: delta(sum.Unmatched, p.Unmatched), DecodeFailures: delta(decodeFailures, s.previousDecode)}}
 	s.previousDecode = decodeFailures
 	m.BookkeepingCompletions = delta(sum.BookkeepingCompletions, p.BookkeepingCompletions)
 	m.Critical = delta(sum.Critical, p.Critical)
@@ -411,10 +420,52 @@ func (s *kernelSensor) Snapshot(start, end uint64) (model.Metric, error) {
 		m.Histogram[i] = delta(n, p.Histogram[i])
 	}
 	s.mu.Lock()
-	s.health.Loss = model.Counters{RingFailures: sum.RingFailures, Suppressed: sum.Suppressed, TrackingFailures: sum.TrackingFailures, Unmatched: sum.Unmatched, DecodeFailures: decodeFailures}
+	s.health.Loss = model.Counters{RingFailures: sum.RingFailures, Suppressed: sum.Suppressed, DetailFailures: sum.DetailFailures, TrackingFailures: sum.TrackingFailures, Unmatched: sum.Unmatched, DecodeFailures: decodeFailures}
 	s.health.BookkeepingCompletions = sum.BookkeepingCompletions
 	s.mu.Unlock()
 	return m, nil
+}
+func (s *kernelSensor) pruneDetailBudgets(end uint64) error {
+	sec := end / uint64(time.Second)
+	if sec == s.lastBudgetSweepSec {
+		return nil
+	}
+	m := s.collection.Maps["detail_budgets"]
+	if m == nil {
+		return fmt.Errorf("detail budget map is missing")
+	}
+	s.staleBudgetKeys = s.staleBudgetKeys[:0]
+	var cursor, next uint64
+	for i := uint32(0); i <= m.MaxEntries(); i++ {
+		var err error
+		if i == 0 {
+			err = m.NextKey(nil, &next)
+		} else {
+			err = m.NextKey(cursor, &next)
+		}
+		if errors.Is(err, ebpf.ErrKeyNotExist) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("iterate detail budgets: %w", err)
+		}
+		if i == m.MaxEntries() {
+			// A concurrent insertion can perturb iteration. Retry on the next poll
+			// instead of failing an otherwise healthy aggregate sensor.
+			return nil
+		}
+		if sec > 2 && next < sec-2 {
+			s.staleBudgetKeys = append(s.staleBudgetKeys, next)
+		}
+		cursor = next
+	}
+	for _, key := range s.staleBudgetKeys {
+		if err := m.Delete(key); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+			return fmt.Errorf("remove expired detail budget: %w", err)
+		}
+	}
+	s.lastBudgetSweepSec = sec
+	return nil
 }
 func delta(n, p uint64) uint64 {
 	if n < p {

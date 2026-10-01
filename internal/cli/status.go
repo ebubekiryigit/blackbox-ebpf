@@ -107,9 +107,9 @@ func renderStatus(w io.Writer, h model.Health, t terminal.Theme, verbose bool) e
 		t.Section(&b, "DIAGNOSTICS · SINCE DAEMON START")
 		rows := []string{}
 		for _, s := range h.Sensors {
-			rows = append(rows, fmt.Sprintf("%s\t%s\t%d\t%d\t%d\t%d\t%d", terminal.Sensor(s.Name), s.State, s.Loss.RingFailures, s.Loss.Suppressed, s.Loss.TrackingFailures, s.Loss.Unmatched, s.Loss.DecodeFailures))
+			rows = append(rows, fmt.Sprintf("%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d", terminal.Sensor(s.Name), s.State, s.Loss.RingFailures, s.Loss.Suppressed, s.Loss.DetailFailures, s.Loss.TrackingFailures, s.Loss.Unmatched, s.Loss.DecodeFailures))
 		}
-		t.Table(&b, "Sensor\tState\tBuffer rejected\tRate limited\tStart unsaved\tStart missing\tDetail invalid", rows, nil)
+		t.Table(&b, "Sensor\tState\tBuffer rejected\tRate limited\tQuota failed\tStart unsaved\tStart missing\tDetail invalid", rows, nil)
 		for _, s := range h.Sensors {
 			if s.BookkeepingCompletions > 0 {
 				t.Line(&b, terminal.Muted, "  ", fmt.Sprintf("%s: %s zero-byte logical WRITE completions excluded as bookkeeping; dispatched cache flushes are still measured.", terminal.Sensor(s.Name), terminal.Count(s.BookkeepingCompletions)))
