@@ -26,6 +26,12 @@ unchanged; selection includes the first complete poll at or after the post-windo
 deadline, and windows may overlap by one aggregate interval to preserve trigger
 evidence. A published file advances the next window boundary even if its
 subsequent storage rotation fails; the path and rotation error remain visible.
+Under memory pressure, a compacted aggregate crossing a requested start is also
+preserved in full. The actual capture start can precede `requested_start_mono_ns`,
+by normally up to one rollup interval. Reports explain this extension; readers
+with the old `requested start <= actual start` check reject such windows. Use the
+reader accompanying the new daemon. A suspend or delayed poll may also extend
+the actual post-window beyond one polling interval.
 
 The next release removes the `max_memory` YAML key and `--max-memory` flag.
 The name implied a total process memory cap, but it only controlled recorder
@@ -45,15 +51,20 @@ The control health response adds `retained_span_ns` without changing protocol
 version `1`; older clients ignore it, and a newer client hides the age line
 when talking to an older daemon that omits the field.
 It also adds optional `detailed_from_ns`, `detailed_span_ns` and
-`aggregate_evictions` fields. The old `memory_evicted_segments` counter now
-describes detailed segment compactions under memory pressure; aggregate losses
-have their own counter.
+`aggregate_evictions` fields. The existing `memory_evicted_segments` counter
+counts removed detailed segments:
+current recordings compact their aggregates before removing details, while older
+BOOTTIME development recordings evicted whole segments. Text diagnostics use the
+neutral label "Detailed segments removed"; aggregate losses now have their own
+counter.
 Sensor health also adds the optional `detail_budget_prune_failures` lifetime
-counter. It records interrupted userspace quota cleanup without claiming event
-detail loss; older clients ignore it.
+counter. It records nonstructural userspace quota cleanup failures without
+claiming event detail loss; older clients ignore it.
 TCP sensor health adds optional `tcp_reset_coverage`. Older sent-reset
-tracepoint signatures lack socketless resets; status and analysis report limited
-coverage from the kernel's BTF signature. An undetermined signature is reported
+tracepoint signatures lack sent resets without a full socket (socketless,
+TIME_WAIT and request sockets). Status and analysis show this as a capability
+note from the kernel's BTF signature, without changing the overall evidence
+verdict solely for this known limitation. An undetermined signature is reported
 as unknown rather than full coverage. Existing capture and socket formats stay
 unchanged.
 
@@ -76,7 +87,9 @@ cannot be inferred from guest timestamps alone.
 
 Restart the daemon to load the new BPF objects and BOOTTIME timestamp source;
 save any in-memory history you need first. Preserve old `.bbx` files and the
-binary that wrote them if their UTC interpretation matters. Remove
+binary that wrote them. Released v0.1.0/v0.2.0 captures lack the required
+BOOTTIME clock metadata and are rejected by the new reader, even though the
+container format number is still 1. Remove
 `max_memory` from YAML and startup flags before restarting; other
 configuration and control socket contracts are unchanged. Verify new captures
 with the new analyzer before retiring the previous binary.
@@ -101,8 +114,9 @@ coverage. Pending incidents do not survive daemon restart.
 The v0.1.0 binary rejects the new `auto_capture` YAML keys and CLI flags, so
 remove them before rolling back. Preserve the previous config and existing
 captures. Its analyzer ignores automatic trigger metadata and may miss the
-critical reason if the source aggregates were evicted. Analyze v0.2 automatic
-captures with a v0.2 or newer reader.
+critical reason if the source aggregates were evicted. Analyze released v0.2
+automatic captures with the v0.2 reader; the current BOOTTIME development reader rejects
+those older captures.
 
 Automatic trigger metadata and status fields are additive within v0.2. Older
 readers may ignore trigger metadata; current readers show it without adding it

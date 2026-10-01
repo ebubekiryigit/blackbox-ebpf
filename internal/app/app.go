@@ -284,7 +284,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 				continue
 			}
 			if h := s.Health(); h.BudgetPruneFailures > 0 && !budgetPruneLogged[s.Name()] {
-				logger.Warn("detail budget cleanup interrupted; retrying on the next poll", "sensor", s.Name(), "failures", h.BudgetPruneFailures)
+				logger.Warn("detail budget cleanup failed; retrying on the next poll", "sensor", s.Name(), "failures", h.BudgetPruneFailures)
 				budgetPruneLogged[s.Name()] = true
 			}
 			if auto != nil {

@@ -136,7 +136,7 @@ func (h Host) Wall(ns uint64) time.Time {
 
 func (h Host) ValidateClock() error {
 	if h.ClockSource == "" {
-		return fmt.Errorf("capture clock source is missing; use the binary that wrote this development capture")
+		return fmt.Errorf("capture clock source is missing; use the binary that wrote this capture")
 	}
 	if h.ClockSource != "boottime" && h.ClockSource != "synthetic" {
 		return fmt.Errorf("unsupported capture clock source %q", h.ClockSource)
@@ -148,9 +148,10 @@ func (h Host) ValidateClock() error {
 }
 
 type RecordingSettings struct {
-	PollIntervalNS           uint64 `json:"poll_interval_ns,omitempty"`
-	SegmentIntervalNS        uint64 `json:"segment_interval_ns,omitempty"`
-	IngressEvents            int    `json:"ingress_events,omitempty"`
+	PollIntervalNS    uint64 `json:"poll_interval_ns,omitempty"`
+	SegmentIntervalNS uint64 `json:"segment_interval_ns,omitempty"`
+	IngressEvents     int    `json:"ingress_events,omitempty"`
+	// MetadataEntries is the capacity of each sensor reader's process cache.
 	MetadataEntries          int    `json:"metadata_entries,omitempty"`
 	BlockTrackingEntries     uint32 `json:"block_tracking_entries,omitempty"`
 	SchedulerTrackingEntries uint32 `json:"scheduler_tracking_entries,omitempty"`

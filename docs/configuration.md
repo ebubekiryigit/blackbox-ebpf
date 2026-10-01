@@ -105,7 +105,10 @@ status shows both the actual aggregate span and the actual detailed span, plus
 budget, compactions, aggregate evictions and drops. If even aggregate summaries
 exceed the budget, the oldest summaries are evicted. The oldest segment age is
 not a guarantee of continuous sensor coverage. Automatic incident files preserve
-published windows independently of the rolling recorder.
+published windows independently of the rolling recorder. A compacted interval
+that crosses a snapshot's requested start is included in full; actual and
+requested starts are saved separately. The extension preserves aggregates only;
+individual events still respect the requested start. The text report explains it.
 When any bounded stage overloads, lifetime counters expose dropped or suppressed
 details; the daemon logs the first userspace overload.
 
@@ -120,8 +123,10 @@ These limits apply at different stages; adding them does not produce a process
 memory ceiling. During a snapshot, sealed recorder segments can remain alive
 while new history is recorded, and encoding or readback validation allocates
 additional memory. Offline analysis also builds decoded events and a report.
-BPF maps/rings consume kernel memory separately. There is no reliable RSS range
-from `history` or `.bbx` size alone: workload mix, string lengths, compression,
+Process metadata caches are bounded per enabled sensor reader, rather than
+shared across sensors. The saved `metadata_entries` setting is the capacity of
+each cache. BPF maps/rings consume kernel memory separately. There is no reliable
+RSS range from `history` or `.bbx` size alone: workload mix, string lengths, compression,
 and the Go runtime matter. Measure peak RSS and BPF allocation on the target
 Linux host with a representative workload before sizing a container memory limit.
 `history` is a time target, not a promise that all of that history fits the

@@ -80,9 +80,9 @@ initialization or permanent runtime failure terminates recording with an error.
 Disabled sensors are outside the strict requirement.
 
 Process identity includes TGID and start time to avoid merging reused PIDs.
-Each sensor reader resolves process metadata before handing a detail to the bounded
-ingress queue. Slow `/proc` reads do not block aggregate polling or the recorder
-loop; resolution failures are counted in daemon health.
+Each sensor reader owns a separate bounded process cache and resolves metadata
+before handing a detail to the bounded ingress queue. Slow `/proc` reads do not
+block aggregate polling or the recorder loop; resolution failures are counted in daemon health.
 Block I/O identifies dispatch context, TCP process ownership is not collected, and OOM details
 identify the victim when the kernel exposes its task. On kernels exposing only a victim PID,
 the detail marks process identity as unavailable. Timing correlations are observations, not causal conclusions.
@@ -91,8 +91,8 @@ resets require a tracepoint signature exposing the incoming packet. Blackbox
 checks its BTF signature and marks coverage limited on older signatures, or
 unknown when the capability cannot be established. This limitation is saved in
 capture health and considered during offline analysis. When available, the
-socketless response reads addresses and ports from packet headers and reverses
-the tuple; active resets use the socket's wire port even after its bind port is cleared.
+socketless or listening-socket response reads addresses and ports from packet
+headers and reverses the tuple; active resets use the socket's wire port even after its bind port is cleared.
 Received reset tuples follow the incoming direction. Optional event metadata records
 endpoint provenance and whether a socket was associated, without additional maps
 or connection tracking. IRQ/current-task identity does not establish socket ownership.

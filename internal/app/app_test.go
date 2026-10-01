@@ -414,7 +414,7 @@ func TestBudgetCleanupRetryKeepsStrictSensorAndLogsOnce(t *testing.T) {
 		}
 		result.ReleaseSnapshot()
 	}
-	if got := strings.Count(logs.String(), "detail budget cleanup interrupted"); got != 1 {
+	if got := strings.Count(logs.String(), "detail budget cleanup failed"); got != 1 {
 		t.Fatalf("expected one cleanup warning, got %d: %s", got, logs.String())
 	}
 	cancel()

@@ -8,8 +8,8 @@ unavailable even on a newer kernel. Root and a privileged container are the curr
 supported privilege model; narrower capability configurations are not validated.
 A built binary needs no runtime compiler or kernel headers.
 
-An interrupted detail-quota map cleanup is retried at the next aggregate poll;
-aggregate recording continues and `status` counts failed cleanup attempts. The count is
+A nonstructural detail-quota map cleanup failure is retried at the next
+aggregate poll; aggregate recording continues and `status` counts failed cleanup attempts. The count is
 also saved in capture health and shown in verbose analysis. It is distinct from
 kernel `detail_budget_failures`, which count event details actually lost. A
 missing quota map remains a permanent sensor failure, including in strict mode;
@@ -70,11 +70,14 @@ The socket path is CLI-only and is not accepted in YAML.
 Default best-effort mode continues with remaining sensors when a subsystem cannot
 initialize or fails permanently. Status, saved health and analysis expose the
 missing coverage and its reason. With no usable sensors, startup fails.
-On kernels with the older TCP sent-reset tracepoint signature, connection-refusal
-resets without a socket are outside sensor coverage. Blackbox checks the BTF
+On kernels with the older TCP sent-reset tracepoint signature,
+sent resets without a full socket are outside sensor coverage, including
+connection refusals, TIME_WAIT and request sockets. Blackbox checks the BTF
 signature and reports `tcp_reset_coverage: limited` in status and saved health;
-`unknown` means the capability could not be established. Analysis does not
-interpret zero observed resets as full reset coverage in either case.
+`limited` is a known capability note on the TCP line and does not by itself
+raise a collection warning. `unknown` means the capability could not be
+established and remains a coverage warning. Analysis does not interpret zero
+observed resets as full reset coverage in either case.
 On kernels with the newer retransmit tracepoint error argument, failed send
 attempts are excluded from the retransmit count.
 
@@ -91,7 +94,10 @@ SIGINT and SIGTERM stop the foreground daemon with exit code 0. Shutdown cancels
 automatic writes and closes active snapshot connections; incomplete files are
 removed, while already published captures remain. A sensor or control
 server failure exits non-zero. Filesystem calls already blocked in the kernel may
-delay process exit until the call returns.
+delay process exit until the call returns. A sensor reader blocked in a `/proc`
+metadata read can also delay shutdown: closing the sensor waits for its reader
+to exit. Aggregate recording and control requests remain independent of that
+reader while the daemon is running.
 
 `status` returns a non-zero exit code when no sensor remains active, after rendering
 the available diagnostics. The Compose healthcheck therefore marks a running but
@@ -120,8 +126,10 @@ After a file is saved, the next incident's requested start is clipped to the
 previous file's end. An aggregate interval crossing that boundary is included in
 the new file so its trigger evidence is not dropped; this can overlap one interval.
 Selection includes the first complete aggregate poll at or after the post-window
-deadline, so the final interval is not omitted. The saved end can be up to one
-`poll_interval` later than the configured deadline.
+deadline, so the final interval is not omitted. During uninterrupted collection
+the saved end is normally no more than one `poll_interval` past the deadline.
+A Linux suspend or stalled event loop can delay that poll further; the actual
+end and post-window duration are saved in the capture. Recording is not reset.
 A failed publication does not advance the saved boundary, so the next incident
 can still include the failed interval if history remains retained. There is no
 cooldown and no trigger is suppressed.
@@ -134,8 +142,13 @@ One further waiting window groups subsequent triggers, extending its end only wh
 the writer is backed up. Its trigger counts remain in the manifest. Selection keeps
 each recorded window even if writing starts later. Memory pressure, startup, or
 eviction during the delay can shorten coverage; the file reports missing history.
-Complete aggregate intervals are preserved; intervals crossing a boundary remain
-excluded as for manual snapshots.
+A compacted aggregate crossing the requested start is included in full. The
+actual start moves to its interval start while the requested start remains in the
+manifest; manual snapshots use the same rule. Individual event details still
+respect the requested start, including after suspend. This can repeat boundary counts
+across files, which must not be summed without accounting for overlap. An interval
+ending after the selected end remains excluded; historical end times are not
+moved merely because a writer was busy.
 
 Native and Compose storage default to `/var/lib/blackbox/captures/auto`, inside
 the existing Compose bind mount. Set `auto_capture.directory` in YAML only when a
@@ -233,8 +246,8 @@ observations whose details were suppressed.
 
 The fixed 32 MiB recorder budget covers retained observation accounting,
 including backing buffer capacity; it is **not an RSS limit**. BPF maps/rings,
-ingress, metadata cache, Go runtime, capture encoding, and readback validation
-add memory. One in-flight snapshot may keep otherwise evicted segments alive
+ingress, per-sensor metadata caches, Go runtime, capture encoding and readback
+validation add memory. One in-flight snapshot may keep otherwise evicted segments alive
 until writing finishes. The 256 MiB decoded `.bbx` limit bounds archive bytes,
 not the RSS of `analyze`. Status exposes BPF memory estimates when the kernel
 supplies them. Status shows how old the oldest retained segment is, not a
