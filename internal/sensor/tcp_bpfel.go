@@ -47,6 +47,7 @@ const (
 	tcpProgSendReset          = "send_reset"
 	tcpVarCriticalThresholdNs = "critical_threshold_ns"
 	tcpVarDetailRate          = "detail_rate"
+	tcpVarRetransmitHasError  = "retransmit_has_error"
 	tcpVarThresholdNs         = "threshold_ns"
 )
 
@@ -112,6 +113,7 @@ type tcpMapSpecs struct {
 type tcpVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
+	RetransmitHasError  *ebpf.VariableSpec `ebpf:"retransmit_has_error"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 }
 
@@ -154,6 +156,7 @@ func (m *tcpMaps) Close() error {
 type tcpVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
+	RetransmitHasError  *ebpf.Variable `ebpf:"retransmit_has_error"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 }
 

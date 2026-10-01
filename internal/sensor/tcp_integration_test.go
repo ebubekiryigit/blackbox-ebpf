@@ -36,6 +36,10 @@ func TestTCPResetTuplesWithAndWithoutSocket(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	resetCoverage := ss[0].Health().TCPResetCoverage
+	if resetCoverage == "" {
+		t.Fatal("TCP reset capability was not recorded in sensor health")
+	}
 
 	verifiedPairs := uint64(0)
 	assertTuple := func(t *testing.T, src, dst *net.TCPAddr, sentSource, sentContext string) {
@@ -73,7 +77,18 @@ func TestTCPResetTuplesWithAndWithoutSocket(t *testing.T) {
 	}
 
 	for _, network := range []string{"tcp4", "tcp6"} {
+		if network == "tcp6" {
+			probe, probeErr := net.ListenTCP("tcp6", &net.TCPAddr{IP: net.ParseIP("::1")})
+			if probeErr != nil {
+				t.Run("tcp6", func(t *testing.T) { t.Skipf("IPv6 loopback is unavailable: %v", probeErr) })
+				continue
+			}
+			probe.Close()
+		}
 		t.Run(network+"/no-listener", func(t *testing.T) {
+			if resetCoverage != model.TCPResetCoverageSupported {
+				t.Skipf("socketless sent resets are not confirmed by kernel BTF: %s", resetCoverage)
+			}
 			family, ip := unix.AF_INET, net.ParseIP("127.0.0.1")
 			if network == "tcp6" {
 				family, ip = unix.AF_INET6, net.ParseIP("::1")

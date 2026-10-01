@@ -111,12 +111,20 @@ func assess(r Report) Assessment {
 			add(CoverageReason{Code: "metric_gap", Severity: "warning", Scope: "window", Sensor: s.Family, Limited: true, Title: sensorName(s.Family) + ": aggregate coverage is shorter than the window", Explanation: fmt.Sprintf("%.1fs of metrics for a %.1fs window. Some activity cannot be assessed.", float64(s.CoveredNS)/1e9, float64(window)/1e9), Evidence: refs})
 		}
 		var life model.Counters
+		var tcpResetCoverage string
 		lifeIndex := -1
 		for j, h := range r.Manifest.Health.Sensors {
 			if h.Name == s.Family {
-				life, lifeIndex = h.Loss, j
+				life, lifeIndex, tcpResetCoverage = h.Loss, j, h.TCPResetCoverage
 				break
 			}
+		}
+		if s.Family == "tcp" && (tcpResetCoverage == model.TCPResetCoverageLimited || tcpResetCoverage == model.TCPResetCoverageUnknown) {
+			explanation := "This kernel's TCP reset tracepoint does not expose socketless sent resets such as refused connections. Zero observed resets cannot establish their absence."
+			if tcpResetCoverage == model.TCPResetCoverageUnknown {
+				explanation = "The kernel's socketless sent-reset tracepoint capability could not be determined. Zero observed resets cannot establish their absence."
+			}
+			add(CoverageReason{Code: "tcp_socketless_resets_unavailable", Severity: "warning", Scope: "sensor_capability", Sensor: "tcp", Limited: true, Title: "TCP reset coverage is limited", Explanation: explanation, Evidence: []EvidenceRef{{"sensor_health", lifeIndex, "tcp_reset_coverage=" + tcpResetCoverage}}})
 		}
 		current, historical := model.CounterNotes(s.Family, s.Loss), model.CounterNotes(s.Family, life)
 		for _, n := range current {

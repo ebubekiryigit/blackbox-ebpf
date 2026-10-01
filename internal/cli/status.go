@@ -16,7 +16,7 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	enabled, active := sensorCounts(h)
 	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
 	for _, s := range h.Sensors {
-		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0
+		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0 || s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown
 	}
 	notes = notes || h.IngressDrops+h.RecorderDrops+h.MetadataFailures+h.SnapshotFailures+h.ClockChanges > 0
 	tone, title := terminal.Good, "RECORDER ACTIVE"
@@ -46,6 +46,8 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 			tone, state = terminal.Muted, "Disabled by configuration"
 		} else if s.State != "healthy" {
 			tone, state = terminal.Warning, "Coverage "+s.State
+		} else if s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown {
+			tone, state = terminal.Warning, "Recording · reset coverage limited"
 		}
 		detail := ""
 		if s.KernelBytesKnown {
@@ -98,6 +100,14 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	if notes {
 		t.Section(&b, "COLLECTION NOTES · SINCE DAEMON START")
 		for _, s := range h.Sensors {
+			if s.TCPResetCoverage == model.TCPResetCoverageLimited || s.TCPResetCoverage == model.TCPResetCoverageUnknown {
+				message := "This kernel does not expose socketless sent resets, including refused connections. Zero observed resets cannot establish their absence."
+				if s.TCPResetCoverage == model.TCPResetCoverageUnknown {
+					message = "This kernel's socketless sent-reset capability could not be determined. Zero observed resets cannot establish their absence."
+				}
+				t.Notice(&b, terminal.Warning, "TCP reset coverage limited", message)
+				fmt.Fprintln(&b)
+			}
 			for _, n := range model.CounterNotes(s.Name, s.Loss) {
 				t.Notice(&b, terminal.Warning, terminal.Sensor(s.Name)+": "+n.Title, n.Explanation)
 				fmt.Fprintln(&b)

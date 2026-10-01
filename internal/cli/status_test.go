@@ -97,6 +97,19 @@ func TestStatusIncludesAutomaticCaptureHealth(t *testing.T) {
 	}
 }
 
+func TestStatusShowsLimitedTCPResetCoverage(t *testing.T) {
+	h := model.Health{Sensors: []model.SensorHealth{{Name: "tcp", State: "healthy", TCPResetCoverage: model.TCPResetCoverageLimited}}}
+	var out bytes.Buffer
+	if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"RECORDER ACTIVE · COLLECTION NOTES", "TCP — Recording · reset coverage limited", "socketless sent resets", "Zero observed resets cannot establish their absence"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status omitted %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestStatusShowsClockDiscontinuityAndCurrentRealtime(t *testing.T) {
 	now := time.Date(2026, 9, 28, 7, 4, 7, 0, time.UTC)
 	h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, ObservedAt: &now, ClockChanges: 1, LastClockChange: &model.ClockDiscontinuity{DetectedBootNS: 200, DetectedAt: now.Add(-time.Minute), OffsetChangeNS: int64(14 * time.Hour)}}

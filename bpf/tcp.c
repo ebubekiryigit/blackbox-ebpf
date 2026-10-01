@@ -34,6 +34,10 @@ struct sk_buff {
 #define TCP_SOCKET_PRESENT 4
 #define TCP_METADATA_KNOWN 8
 
+// Linux 6.17 added an error argument and emits this tracepoint for failed
+// attempts too. The loader checks the BTF signature before setting this flag.
+const volatile __u32 retransmit_has_error = 0;
+
 static __always_inline int socket_endpoints(struct event *e, struct sock *sk) {
   if (!sk)
     return 0;
@@ -147,6 +151,8 @@ static __always_inline int record(struct sock *sk, struct sk_buff *skb,
 }
 SEC("raw_tp/tcp_retransmit_skb")
 int retransmit(struct bpf_raw_tracepoint_args *ctx) {
+  if (retransmit_has_error && ctx->args[2] != 0)
+    return 0;
   return record((void *)ctx->args[0], 0, 3);
 }
 SEC("raw_tp/tcp_send_reset")

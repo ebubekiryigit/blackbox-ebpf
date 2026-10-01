@@ -132,6 +132,13 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 					constants["victim_task_arg"] = taskArg
 				}
 			}
+			if d.name == "tcp" {
+				var hasError uint32
+				hasError, err = tcpRetransmitHasErrorArg()
+				if err == nil {
+					constants["retransmit_has_error"] = hasError
+				}
+			}
 			if err == nil {
 				for name, value := range constants {
 					if err = spec.Variables[name].Set(value); err != nil {
@@ -146,6 +153,9 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 			col, err = ebpf.NewCollection(spec)
 		}
 		s := &kernelSensor{name: d.name, collection: col, perCPU: make([]wireStats, cpus), health: model.SensorHealth{Name: d.name, State: "healthy"}}
+		if d.name == "tcp" && err == nil {
+			s.health.TCPResetCoverage = tcpResetCoverage()
+		}
 		if err == nil {
 			// All hooks of a family are required; partial coverage isn't labeled healthy.
 			for program, hook := range d.hooks {
@@ -272,6 +282,77 @@ func oomVictimTaskArgFromProto(proto *btf.FuncProto) (uint32, error) {
 		}
 	}
 	return 0, fmt.Errorf("unsupported OOM victim argument type")
+}
+
+// The reset tracepoint gained a reason argument when socketless response
+// resets became visible. Vendor backports may differ, so this is a capability
+// hint rather than an exact kernel-version test.
+func tcpResetCoverage() string {
+	spec, err := btf.LoadKernelSpec()
+	if err != nil {
+		return model.TCPResetCoverageUnknown
+	}
+	var trace *btf.Typedef
+	if err := spec.TypeByName("btf_trace_tcp_send_reset", &trace); err != nil {
+		return model.TCPResetCoverageUnknown
+	}
+	ptr, ok := btf.UnderlyingType(trace.Type).(*btf.Pointer)
+	if !ok {
+		return model.TCPResetCoverageUnknown
+	}
+	proto, ok := btf.UnderlyingType(ptr.Target).(*btf.FuncProto)
+	if !ok {
+		return model.TCPResetCoverageUnknown
+	}
+	return tcpResetCoverageFromProto(proto)
+}
+
+func tcpResetCoverageFromProto(proto *btf.FuncProto) string {
+	// Raw tracepoint BTF has one implicit context parameter. Older kernels
+	// expose (ctx, sk, skb); newer kernels add the reset reason.
+	if len(proto.Params) == 3 {
+		return model.TCPResetCoverageLimited
+	}
+	if len(proto.Params) == 4 {
+		switch btf.UnderlyingType(proto.Params[3].Type).(type) {
+		case *btf.Enum, *btf.Int:
+			return model.TCPResetCoverageSupported
+		}
+	}
+	return model.TCPResetCoverageUnknown
+}
+
+func tcpRetransmitHasErrorArg() (uint32, error) {
+	spec, err := btf.LoadKernelSpec()
+	if err != nil {
+		return 0, err
+	}
+	var trace *btf.Typedef
+	if err := spec.TypeByName("btf_trace_tcp_retransmit_skb", &trace); err != nil {
+		return 0, fmt.Errorf("cannot establish TCP retransmit tracepoint arguments: %w", err)
+	}
+	ptr, ok := btf.UnderlyingType(trace.Type).(*btf.Pointer)
+	if !ok {
+		return 0, fmt.Errorf("unexpected TCP retransmit tracepoint BTF")
+	}
+	proto, ok := btf.UnderlyingType(ptr.Target).(*btf.FuncProto)
+	if !ok {
+		return 0, fmt.Errorf("unexpected TCP retransmit tracepoint prototype")
+	}
+	return tcpRetransmitHasErrorArgFromProto(proto)
+}
+
+func tcpRetransmitHasErrorArgFromProto(proto *btf.FuncProto) (uint32, error) {
+	// Raw tracepoint BTF includes an implicit context parameter.
+	if len(proto.Params) == 3 {
+		return 0, nil
+	}
+	if len(proto.Params) == 4 {
+		if arg, ok := btf.UnderlyingType(proto.Params[3].Type).(*btf.Int); ok && arg.Size == 4 {
+			return 1, nil
+		}
+	}
+	return 0, fmt.Errorf("unsupported TCP retransmit tracepoint arguments")
 }
 func (s *kernelSensor) fail(err error) {
 	s.mu.Lock()
