@@ -15,8 +15,9 @@ const (
 	MaxHistory           = 24 * time.Hour
 	MinMemory      int64 = 1 << 20
 	// RecorderBudgetBytes caps retained history accounting, not process RSS.
-	// Keep it below the decoded archive budget; snapshots also need working memory.
-	RecorderBudgetBytes int64 = 32 << 20
+	// Allow for JSON escaping and tar framing in the decoded archive budget.
+	// TestFullRecorderBudgetFitsDefaultCapture protects this relationship.
+	RecorderBudgetBytes int64 = 64 << 20
 	// Older detailed segments are folded into aggregate-only time buckets when
 	// the recorder budget is pressured. This is not an operator setting.
 	RollupInterval                  = time.Minute
@@ -104,7 +105,7 @@ func Default() Config {
 		AutoCapture: AutoCapture{Enabled: true, Directory: "/var/lib/blackbox/captures/auto", Sensors: []string{"block_io", "scheduler", "oom"}, Before: time.Minute, After: 10 * time.Second, MaxFiles: 1000, MaxStorage: 1 << 30, WriteTimeout: 2 * time.Minute},
 		Resources:   Resources{PollInterval: time.Second, SegmentInterval: time.Second, IngressEvents: 1024, QueryQueue: 8, MetadataEntries: 1024, MetadataPathBytes: 512, BlockTrackingEntries: 8192, SchedulerTrackingEntries: 16384, RingBytes: 256 << 10},
 		Control:     Control{MaxClients: 8, RequestBytes: 4096, ResponseBytes: 64 << 10, Timeout: 30 * time.Second, QueryTimeout: 30 * time.Second, DialTimeout: time.Second, MaxCaptureBytes: 512 << 20},
-		Capture:     CaptureLimits{MaxDecodedBytes: 256 << 20, MaxEntries: 100000, CompressionWindowBytes: 1 << 20},
+		Capture:     CaptureLimits{MaxDecodedBytes: 512 << 20, MaxEntries: 100000, CompressionWindowBytes: 1 << 20},
 		Report:      Report{Events: 20, VerboseEvents: 100, Processes: 5, VerboseProcesses: 10},
 	}
 }

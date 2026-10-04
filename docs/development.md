@@ -88,9 +88,10 @@ production CPU. Compare repeated runs on the same hardware. Report workload,
 CPU/RSS, map memory, snapshot latency, retained coverage and drops together before
 making overhead claims.
 
-`TestFullRecorderBudgetFitsDefaultCapture` fills the fixed 32 MiB recorder
-budget with escape-heavy events and checks that its snapshot writes within the
-256 MiB decoded `.bbx` limit. Keep this test aligned when changing event fields,
+`TestFullRecorderBudgetFitsDefaultCapture` fills the fixed 64 MiB recorder
+budget with escape-heavy events and checks that its snapshot writes and reads
+within the 512 MiB decoded `.bbx` limit without changing retained event data.
+Keep this test aligned when changing event fields,
 recorder accounting or archive budgets. It protects the default relationship,
 but it is not a process RSS guarantee or a substitute for Linux workload sizing.
 

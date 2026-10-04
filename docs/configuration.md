@@ -95,9 +95,10 @@ the client's `--timeout` deadline. Automatic incident persistence uses its own
 
 ## Internal resource budgets
 
-The recorder has a fixed 32 MiB retained-history accounting budget. It covers
+The recorder has a fixed 64 MiB retained-history accounting budget. It covers
 event/metric backing capacity, retained string lengths, and segment bookkeeping.
-It does not bound process RSS.
+It is used as observations arrive, rather than reserved at startup. It does not
+bound process RSS.
 Status shows the age of the oldest retained segment alongside the configured
 `history` target. When the budget fills, the oldest detailed segments become
 one-minute aggregate-only rollups. There is no fixed period of detail retention:
@@ -114,8 +115,8 @@ details; the daemon logs the first userspace overload.
 
 | Internal budget | Default | What it bounds |
 | --- | ---: | --- |
-| Recorder history accounting | 32 MiB | Retained observation backing and strings, not RSS |
-| Decoded `.bbx` archive | 256 MiB | JSON/tar bytes after decompression, not decoder RSS |
+| Recorder history accounting | 64 MiB | Retained observation backing and strings, not RSS |
+| Decoded `.bbx` archive | 512 MiB | JSON/tar bytes after decompression, not decoder RSS |
 | `.bbx` archive entries | 100,000 | Manifest, host, segments, completion marker |
 | Encoded capture transport | 512 MiB | One compressed control/automatic capture file |
 
@@ -123,6 +124,8 @@ These limits apply at different stages; adding them does not produce a process
 memory ceiling. During a snapshot, sealed recorder segments can remain alive
 while new history is recorded, and encoding or readback validation allocates
 additional memory. Offline analysis also builds decoded events and a report.
+Full `--json` output additionally buffers the complete serialized report and
+its indentation, so its peak memory can be much higher than normal text output.
 Process metadata caches are bounded per enabled sensor reader, rather than
 shared across sensors. The saved `metadata_entries` setting is the capacity of
 each cache. BPF maps/rings consume kernel memory separately. There is no reliable

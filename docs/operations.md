@@ -244,11 +244,11 @@ retransmissions/resets, and OOM victims. Each sensor has a bounded, shared detai
 quota across CPUs; OOM is exempt. Aggregate counters still include
 observations whose details were suppressed.
 
-The fixed 32 MiB recorder budget covers retained observation accounting,
+The fixed 64 MiB recorder budget covers retained observation accounting,
 including backing buffer capacity; it is **not an RSS limit**. BPF maps/rings,
 ingress, per-sensor metadata caches, Go runtime, capture encoding and readback
 validation add memory. One in-flight snapshot may keep otherwise evicted segments alive
-until writing finishes. The 256 MiB decoded `.bbx` limit bounds archive bytes,
+until writing finishes. The 512 MiB decoded `.bbx` limit bounds archive bytes,
 not the RSS of `analyze`. Status exposes BPF memory estimates when the kernel
 supplies them. Status shows how old the oldest retained segment is, not a
 guarantee of continuous sensor coverage. When the budget fills, the oldest
@@ -261,7 +261,9 @@ were retained; inspect sensor coverage alongside the report.
 For deployment sizing, measure daemon peak RSS from `/proc/<pid>/status`
 (`VmHWM`) during representative recording and snapshot load. Measure offline
 `analyze` separately with `/usr/bin/time -v`; capture size on disk alone does
-not predict decoded memory. Leave headroom for one snapshot and the kernel BPF
+not predict decoded memory. Measure `--json` separately if used: complete report
+serialization and indentation can require much more memory than text rendering.
+Leave headroom for one snapshot and the kernel BPF
 allocation shown by `status --verbose`. See the
 [budget table](configuration.md#internal-resource-budgets) for exactly what each
 fixed limit covers.

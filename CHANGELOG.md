@@ -38,8 +38,12 @@
 - Run kernel integration in disposable x86_64 QEMU guests: 5.10, 6.1 and 6.12
   on PR/main, with 5.15, 6.6 and current stable added for manual/tag runs.
 - Record the scheduler tracking-map capacity in new capture manifests.
+- Raise recorder accounting from 32 to 64 MiB together with the decoded `.bbx`
+  limit from 256 to 512 MiB. Larger captures require the accompanying analyzer;
+  recording, snapshots and full JSON reports may use more memory. Encoded
+  transport and archive entry limits are unchanged.
 - Remove the misleading `max_memory` YAML/CLI setting. Recorder history keeps a
-  fixed 32 MiB accounting budget; existing configs must remove `max_memory`
+  fixed 64 MiB accounting budget; existing configs must remove `max_memory`
   before upgrade. This budget does not cap process RSS. The automatic storage
   byte quota accepts values above 1 TiB; file-count and scan safety bounds remain.
 - Use BOOTTIME for kernel event timestamps and recorder windows while retaining

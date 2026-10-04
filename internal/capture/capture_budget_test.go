@@ -1,7 +1,7 @@
 package capture_test
 
 import (
-	"io"
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +46,26 @@ func TestFullRecorderBudgetFitsDefaultCapture(t *testing.T) {
 	}
 	host := model.Host{ClockSource: "boottime", AnchorMonoNS: now, AnchorWall: time.Now().UTC()}
 	snapshot := r.Snapshot(24*time.Hour, now, host, h, "ebpf")
-	if err := (capture.Container{Limits: cfg.Capture}).Write(io.Discard, snapshot); err != nil {
+	container := capture.Container{Limits: cfg.Capture}
+	var encoded bytes.Buffer
+	if err := container.Write(&encoded, snapshot); err != nil {
 		t.Fatalf("full recorder budget cannot be encoded within default .bbx limits: %v", err)
+	}
+	decoded, err := container.Read(bytes.NewReader(encoded.Bytes()))
+	if err != nil {
+		t.Fatalf("full recorder budget cannot be read within default .bbx limits: %v", err)
+	}
+	if decoded.Manifest.StartMonoNS != snapshot.Manifest.StartMonoNS || decoded.Manifest.EndMonoNS != snapshot.Manifest.EndMonoNS || len(decoded.Segments) != len(snapshot.Segments) {
+		t.Fatal("full-budget round trip changed the capture window or segment count")
+	}
+	for i, segment := range snapshot.Segments {
+		if len(decoded.Segments[i].Events) != len(segment.Events) {
+			t.Fatalf("segment %d: full-budget round trip changed the event count", i)
+		}
+		for j, event := range segment.Events {
+			if decoded.Segments[i].Events[j] != event {
+				t.Fatalf("segment %d event %d: full-budget round trip changed event data", i, j)
+			}
+		}
 	}
 }

@@ -37,7 +37,7 @@ The next release removes the `max_memory` YAML key and `--max-memory` flag.
 The name implied a total process memory cap, but it only controlled recorder
 history accounting and could exceed the `.bbx` decoded archive budget. Remove
 the key from existing config files before upgrading; strict parsing rejects it.
-The recorder now uses a fixed 32 MiB accounting budget, so hosts previously
+The recorder now uses a fixed 64 MiB accounting budget, so hosts previously
 configured above that value may retain less detailed history. When the budget
 fills, the oldest detailed segments become one-minute aggregate-only rollups;
 there is no fixed detail-retention duration. Status reports actual detailed and
@@ -47,6 +47,17 @@ coverage. Older readers ignore this pre-v1 field; use the new reader for new
 captures. `auto_capture.max_storage` no longer
 has a 1 TiB ceiling; the default stays 1 GiB and `max_files` still bounds the
 per-write directory scan/sort work.
+
+Compared with earlier development builds, the recorder accounting budget rises
+from 32 to 64 MiB and the decoded `.bbx` archive limit from 256 to 512 MiB.
+The encoded transport limit stays 512 MiB and the entry limit stays 100,000.
+The larger recorder budget is filled on demand; recording, snapshots and
+offline analysis may use more memory. These limits do not cap process RSS,
+and full `--json` report serialization can add substantial temporary memory.
+Use the accompanying analyzer: new captures above 256 MiB decoded size are
+rejected by earlier readers even though the capture format number is unchanged.
+The new reader continues to accept smaller captures with current clock metadata.
+
 The control health response adds `retained_span_ns` without changing protocol
 version `1`; older clients ignore it, and a newer client hides the age line
 when talking to an older daemon that omits the field.
