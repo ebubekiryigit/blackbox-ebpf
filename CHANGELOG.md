@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Preserve first-dispatch block latency and process context across observed
+  requeues, with allocation identity checks against request-address reuse.
+  Exclude ambiguous requeued timing as unmatched coverage.
+- Reserve the final 25% of the existing block/scheduler detail quota for
+  critical latency without increasing total detail traffic or changing aggregate
+  counts. TCP and OOM admission remain unchanged.
+- Clean up permanently failed sensor readers outside the recorder loop, once
+  per sensor, and discard details arriving after reader cancellation. Shutdown
+  joins cleanup while preserving reader resource ownership.
+- Show automatic writer age and timeout in status, and warn once when the
+  writer remains held past its timeout. Preserve the single snapshot lease
+  while a blocked filesystem call still owns captured history.
+- Retry transient control socket memory errors, retain readable final sensor
+  aggregates, report discarded pending incidents and final writer results at
+  shutdown, and tolerate files removed concurrently during automatic rotation.
 - Discard stale scheduler wakeups when a task blocks, avoiding false long
   runnable-wait latencies. Decode OOM victim identity for both supported kernel
   tracepoint signatures, with PID-only evidence where the older signature lacks

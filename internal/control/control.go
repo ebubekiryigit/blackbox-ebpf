@@ -97,7 +97,10 @@ func serveListener(ctx context.Context, l net.Listener, e *app.Engine, limits co
 			if serveCtx.Err() != nil {
 				return nil
 			}
-			if netErr, ok := er.(net.Error); ok && netErr.Temporary() {
+			netErr, isNetError := er.(net.Error)
+			// Go does not classify socket memory pressure as temporary. Keep
+			// recording while the existing cancellable backoff retries it.
+			if (isNetError && netErr.Temporary()) || errors.Is(er, syscall.ENOMEM) || errors.Is(er, syscall.ENOBUFS) {
 				if retryDelay == 0 {
 					retryDelay = 5 * time.Millisecond
 				} else {

@@ -20,8 +20,10 @@ const (
 	RecorderBudgetBytes int64 = 64 << 20
 	// Older detailed segments are folded into aggregate-only time buckets when
 	// the recorder budget is pressured. This is not an operator setting.
-	RollupInterval                  = time.Minute
-	MaxDetailRate                   = 10000
+	RollupInterval = time.Minute
+	MaxDetailRate  = 10000
+	// Reserve a quarter of block/scheduler details for critical latency.
+	CriticalDetailDivisor           = 4
 	MaxQueueEntries                 = 1 << 20
 	MaxTrackingEntries              = 1 << 20
 	MinRingBytes                    = 64 << 10 // Valid for supported Linux 4/16/64 KiB page sizes.

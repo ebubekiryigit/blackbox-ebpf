@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -499,5 +500,111 @@ func TestAutomaticWaitsForWriterAndPendingShutdown(t *testing.T) {
 	b.close()
 	if e.snapshotBusy.Load() {
 		t.Fatal("shutdown leaked writer")
+	}
+}
+
+func TestAutomaticShutdownReportsDiscardedWindow(t *testing.T) {
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprint(pending), func(t *testing.T) {
+			var logs bytes.Buffer
+			e := &Engine{Config: autoConfig(t), logger: slog.New(slog.NewTextHandler(&logs, nil))}
+			a := newAutomatic(context.Background(), e, model.Families)
+			if pending {
+				a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: 1, EndMonoNS: 2, Count: 3}, 2)
+			}
+			a.close()
+			if got := strings.Contains(logs.String(), "pending automatic incident discarded during shutdown"); got != pending {
+				t.Fatalf("pending=%v: shutdown log %q", pending, logs.String())
+			}
+			if pending && (!strings.Contains(logs.String(), "pending_until_boot_ns=") || !strings.Contains(logs.String(), "level=WARN")) {
+				t.Fatalf("pending window not identified: %s", logs.String())
+			}
+		})
+	}
+}
+
+func TestAutomaticShutdownReportsCompletedWorkerResult(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprint(failed), func(t *testing.T) {
+			var logs bytes.Buffer
+			e := &Engine{Config: autoConfig(t), logger: slog.New(slog.NewTextHandler(&logs, nil))}
+			a := newAutomatic(context.Background(), e, model.Families)
+			a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: 1, EndMonoNS: 2, Count: 1}, 2)
+			a.controller.Begin()
+			result := autoResult{path: "/captures/saved.bbx", at: time.Now().UTC()}
+			if failed {
+				result.path, result.err = "", context.DeadlineExceeded
+			}
+			// The worker finished, but the loop selected shutdown first.
+			a.results <- result
+			a.close()
+			h := a.controller.Health()
+			if failed {
+				if h.Failures != 1 || e.SnapshotFailures.Load() != 1 || !strings.Contains(logs.String(), "deadline exceeded") {
+					t.Fatalf("shutdown lost worker failure: %+v log=%q", h, logs.String())
+				}
+			} else if h.Saved != 1 || !strings.Contains(logs.String(), result.path) {
+				t.Fatalf("shutdown lost publication result: %+v log=%q", h, logs.String())
+			}
+		})
+	}
+}
+
+func TestAutomaticShutdownReportsQueuedCaptureCancellation(t *testing.T) {
+	var logs bytes.Buffer
+	e := &Engine{Config: autoConfig(t), logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	a := newAutomatic(context.Background(), e, model.Families)
+	a.cancel()
+	<-a.done // Reproduce cancellation winning before the queued job is taken.
+	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: 1, EndMonoNS: 2, Count: 1}, 2)
+	a.controller.Begin()
+	release, ok := e.beginSnapshot()
+	if !ok {
+		t.Fatal("snapshot lease unavailable")
+	}
+	a.jobs <- autoJob{release: release}
+	a.close()
+	if e.snapshotBusy.Load() || a.controller.Health().Failures != 1 || !strings.Contains(logs.String(), "context canceled") {
+		t.Fatalf("queued capture lost without releasing/logging: %+v log=%q", a.controller.Health(), logs.String())
+	}
+}
+
+func TestOverdueAutomaticWriterIsVisibleWithoutReleasingLease(t *testing.T) {
+	cfg := autoConfig(t)
+	cfg.AutoCapture.WriteTimeout = time.Second
+	var logs bytes.Buffer
+	e := &Engine{Config: cfg, logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	a := &automatic{controller: autocapture.New(cfg, model.Families), engine: e, timer: time.NewTimer(time.Hour), jobs: make(chan autoJob, 1)}
+	defer a.timer.Stop()
+	r := recorder.New(cfg.History, cfg.RecorderBudgetBytes, uint64(time.Second))
+	a.controller.Observe(model.Metric{Family: "oom", StartMonoNS: uint64(time.Second), EndMonoNS: uint64(2 * time.Second), Count: 1}, uint64(2*time.Second))
+	end, _ := a.controller.Deadline()
+	a.progress(end, end, r, func() model.Health { return model.Health{} }, model.Host{})
+	job := <-a.jobs // Hold the job as if a filesystem syscall has not returned.
+	defer job.release()
+	if h := a.health(end + uint64(time.Second) - 1); h.WriteOverdue || h.WritingForNS == 0 {
+		t.Fatal("incorrect early timeout", h)
+	}
+	for range 2 {
+		a.progress(end+uint64(time.Second), end+uint64(time.Second), r, func() model.Health { return model.Health{} }, model.Host{})
+		h := a.health(end + uint64(time.Second))
+		if !h.WriteOverdue || h.State != "writing" || h.WritingForNS != uint64(time.Second) {
+			t.Fatal("overdue writer not visible", h)
+		}
+		if release, ok := e.beginSnapshot(); ok {
+			release()
+			t.Fatal("timeout released pinned capture")
+		}
+	}
+	if strings.Count(logs.String(), "automatic capture writer exceeded deadline") != 1 {
+		t.Fatal("missing/noisy warning", logs.String())
+	}
+	job.release()
+	a.finish(autoResult{err: context.DeadlineExceeded})
+	if h := a.health(end + uint64(2*time.Second)); h.WriteOverdue || h.WritingForNS != 0 || h.Failures != 1 {
+		t.Fatal("completion left stale writer status", h)
+	}
+	if e.snapshotBusy.Load() {
+		t.Fatal("completion did not release lease")
 	}
 }

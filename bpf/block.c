@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-only
 #include "common.h"
+#include "request_timing.h"
 struct gendisk {
   int major;
   int first_minor;
@@ -12,9 +13,10 @@ struct request {
   struct gendisk *rq_disk;
   unsigned int __data_len;
   unsigned int cmd_flags;
+  __u64 start_time_ns;
 } CORE;
 struct inflight {
-  __u64 start;
+  struct request_timing timing;
   struct event identity;
 };
 struct {
@@ -25,14 +27,20 @@ struct {
   __type(value, struct inflight);
 } starts SEC(".maps");
 const volatile __u32 rq_arg_index = 0;
+const volatile __u32 requeue_arg_index = 0;
 SEC("raw_tp/block_rq_issue") int issue(struct bpf_raw_tracepoint_args *ctx) {
   struct stats *s = get_stats();
   if (!s)
     return 0;
   struct request *rq = (void *)ctx->args[rq_arg_index ? 1 : 0];
   __u64 key = (__u64)rq;
+  __u64 generation = BPF_CORE_READ(rq, start_time_ns);
+  struct inflight *old = bpf_map_lookup_elem(&starts, &key);
+  if (old && resume_request(&old->timing, generation))
+    return 0;
   struct inflight v = {};
-  v.start = bpf_ktime_get_ns();
+  v.timing.start = bpf_ktime_get_ns();
+  v.timing.generation = generation;
   task_identity(&v.identity, (void *)bpf_get_current_task());
   struct gendisk *d = 0;
   if (bpf_core_field_exists(rq->rq_disk))
@@ -47,6 +55,14 @@ SEC("raw_tp/block_rq_issue") int issue(struct bpf_raw_tracepoint_args *ctx) {
   v.identity.operation = BPF_CORE_READ(rq, cmd_flags) & 255;
   if (bpf_map_update_elem(&starts, &key, &v, BPF_ANY))
     __sync_fetch_and_add(&s->tracking_failures, 1);
+  return 0;
+}
+SEC("raw_tp/block_rq_requeue") int requeue(struct bpf_raw_tracepoint_args *ctx) {
+  struct request *rq = (void *)ctx->args[requeue_arg_index ? 1 : 0];
+  __u64 key = (__u64)rq;
+  struct inflight *v = bpf_map_lookup_elem(&starts, &key);
+  if (v)
+    requeue_request(&v->timing, BPF_CORE_READ(rq, start_time_ns));
   return 0;
 }
 SEC("raw_tp/block_rq_complete")
@@ -77,7 +93,12 @@ int complete(struct bpf_raw_tracepoint_args *ctx) {
     __sync_fetch_and_add(&s->unmatched, 1);
     return 0;
   }
-  __u64 latency = bpf_ktime_get_ns() - v->start;
+  if (!request_timing_valid(&v->timing, BPF_CORE_READ(rq, start_time_ns))) {
+    __sync_fetch_and_add(&s->unmatched, 1);
+    bpf_map_delete_elem(&starts, &key);
+    return 0;
+  }
+  __u64 latency = bpf_ktime_get_ns() - v->timing.start;
   histogram(s, latency);
   __sync_fetch_and_add(&s->bytes, v->identity.bytes);
   if (latency >= threshold_ns) {
@@ -85,7 +106,7 @@ int complete(struct bpf_raw_tracepoint_args *ctx) {
     if (latency >= critical_threshold_ns)
       __sync_fetch_and_add(&s->critical, 1);
     __u64 now = bpf_ktime_get_boot_ns();
-    struct event *e = reserve(s, 1, now, 1);
+    struct event *e = reserve(s, 1, now, 1, latency >= critical_threshold_ns);
     if (e) {
       *e = v->identity;
       e->mono_ns = now;

@@ -20,6 +20,21 @@ builds used the control timeout for automatic writes, which was 30 seconds by
 default. Set `auto_capture.write_timeout: 30s` if preserving that deadline
 matters during an upgrade; a longer write can hold the snapshot writer lease
 longer.
+Block latency now preserves the first observed dispatch across an observed
+requeue when the request's allocation identity can be verified. Existing
+threshold values do not change, but measured latency and automatic critical
+trigger counts may increase because earlier attempts are no longer discarded.
+Ambiguous requeued timing is excluded and counted as unmatched coverage.
+Block/scheduler warning details stop at 75% of the existing shared quota;
+critical details can use the remainder. Histogram and critical counts do not
+depend on detail admission. TCP and OOM admission are unchanged.
+Automatic status adds optional `writing_for_ns`, `write_timeout_ns` and
+`write_overdue` fields without changing socket protocol `1`. Older clients ignore
+them; new clients warn when the writer has held its lease past the configured
+timeout. Timeout does not interrupt a blocked filesystem call or release pinned
+history. No additional snapshot worker, startup storage probe, retry or OOM-kill
+priority is enabled by these changes.
+
 Consecutive automatic captures no longer repeat the full pre-trigger window
 after a successful publication. Trigger detection and post-window timing are
 unchanged; selection includes the first complete poll at or after the post-window

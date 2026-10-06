@@ -106,6 +106,78 @@ func (s *failingSensor) Health() model.SensorHealth {
 }
 func (s *failingSensor) Close() error { s.mu.Lock(); defer s.mu.Unlock(); s.closes++; return nil }
 
+type failedReaderSensor struct {
+	*failingSensor
+	snapshots int
+}
+
+func (s *failedReaderSensor) Snapshot(start, end uint64) (model.Metric, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snapshots++
+	if s.closes != 0 {
+		return model.Metric{}, errors.New("aggregate map is closed")
+	}
+	m := model.Metric{Family: s.Name(), StartMonoNS: start, EndMonoNS: end}
+	if s.failed {
+		m.Count = 3
+	}
+	return m, nil
+}
+
+func TestFailedReaderPreservesLastAggregateAndTriggerBeforeClose(t *testing.T) {
+	c := config.Default()
+	c.Resources.PollInterval = time.Minute
+	s := &failedReaderSensor{failingSensor: &failingSensor{name: "oom"}}
+	epoch := time.Now()
+	e := &Engine{Config: c, sensors: []sensor.Sensor{s, &failingSensor{name: "scheduler"}},
+		ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), stopped: make(chan struct{}),
+		clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done, ready := make(chan error, 1), make(chan struct{})
+	go func() { done <- e.RunWithReady(ctx, ready) }()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("recorder did not start")
+	}
+	s.mu.Lock()
+	s.failed = true
+	s.mu.Unlock()
+	for range 2 {
+		result, err := e.Ask(ctx, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.ReleaseSnapshot()
+		var count uint64
+		for _, segment := range result.Capture.Segments {
+			for _, m := range segment.Metrics {
+				if m.Family == "oom" {
+					count += m.Count
+				}
+			}
+		}
+		if count != 3 || result.Health.AutoCapture.Detected != 3 {
+			t.Fatalf("final aggregate/trigger lost or duplicated: count=%d, auto=%+v", count, result.Health.AutoCapture)
+		}
+		if result.Capture.Manifest.Health.Sensors[0].State != "error" {
+			t.Fatal("final aggregate hid failed sensor coverage")
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	e.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.snapshots != 2 || s.closes != 1 {
+		t.Fatalf("sensor lifecycle: snapshots=%d, closes=%d", s.snapshots, s.closes)
+	}
+}
+
 func TestRunSignalsReadinessOnlyAfterSensorStartup(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -496,5 +568,97 @@ func TestSnapshotFailureIsCountedAndLogged(t *testing.T) {
 	e.RecordSnapshotFailure(fmt.Errorf("client disconnected"))
 	if e.SnapshotFailures.Load() != 1 || !strings.Contains(logs.String(), "snapshot stream failed") || !strings.Contains(logs.String(), "client disconnected") {
 		t.Fatalf("snapshot failure remained opaque: count=%d logs=%q", e.SnapshotFailures.Load(), logs.String())
+	}
+}
+
+type blockedCloseSensor struct {
+	*failedReaderSensor
+	entered chan struct{}
+	resume  chan struct{}
+	sink    sensor.Sink
+	ctx     context.Context
+}
+
+func (s *blockedCloseSensor) Start(ctx context.Context, sink sensor.Sink) error {
+	s.ctx, s.sink = ctx, sink
+	return nil
+}
+func (s *blockedCloseSensor) Close() error {
+	close(s.entered)
+	<-s.resume
+	return s.failedReaderSensor.Close()
+}
+
+func TestBlockedSensorCleanupDoesNotStopOtherSensors(t *testing.T) {
+	cfg := config.Default()
+	cfg.AutoCapture.Enabled = false
+	cfg.Resources.PollInterval = time.Minute
+	s := &blockedCloseSensor{failedReaderSensor: &failedReaderSensor{failingSensor: &failingSensor{name: "block_io"}}, entered: make(chan struct{}), resume: make(chan struct{})}
+	epoch := time.Now()
+	e := &Engine{Config: cfg, sensors: []sensor.Sensor{s, &failingSensor{name: "scheduler"}}, ingress: make(chan model.Event, 2), Queries: make(chan Query, 2), stopped: make(chan struct{}), clock: func() (uint64, error) { return uint64(time.Second + time.Since(epoch)), nil }}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer close(s.resume)
+	done, ready := make(chan error, 1), make(chan struct{})
+	go func() { done <- e.RunWithReady(ctx, ready) }()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("not ready")
+	}
+	s.mu.Lock()
+	s.failed = true
+	s.mu.Unlock()
+	result, err := e.Ask(ctx, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.ReleaseSnapshot()
+	select {
+	case <-s.entered:
+	case <-ctx.Done():
+		t.Fatal("cleanup not started")
+	}
+	if s.ctx.Err() == nil {
+		t.Fatal("failed reader was not cancelled")
+	}
+	// Simulate enrichment returning after this sensor was disabled.
+	s.sink(model.Event{Type: "block_io", MonoNS: uint64(2 * time.Second), LatencyNS: uint64(time.Second)})
+	result, err = e.Ask(ctx, time.Second)
+	if err != nil {
+		t.Fatal("working recorder blocked on failed cleanup", err)
+	}
+	defer result.ReleaseSnapshot()
+	for _, segment := range result.Capture.Segments {
+		if len(segment.Events) != 0 {
+			t.Fatal("late detail from failed reader was retained")
+		}
+	}
+	if result.Health.Sensors[0].State != "error" || result.Health.Sensors[1].State != "healthy" {
+		t.Fatal("coverage state changed", result.Health)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan struct{})
+	go func() { e.Close(); close(closed) }()
+	select {
+	case <-closed:
+		t.Fatal("resources released before blocked reader finished")
+	case <-time.After(25 * time.Millisecond):
+	}
+	// Use a send to release the fake reader; deferred close is also safe.
+	s.resume <- struct{}{}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup did not finish")
+	}
+	e.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closes != 1 {
+		t.Fatal("duplicate cleanup", s.closes)
 	}
 }

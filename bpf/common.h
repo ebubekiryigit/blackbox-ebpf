@@ -125,7 +125,7 @@ static __always_inline void histogram(struct stats *s, __u64 ns) {
   __sync_fetch_and_add(&s->histogram[bucket], 1);
   __sync_fetch_and_add(&s->count, 1);
 }
-static __always_inline int allowed(struct stats *s, __u64 ns) {
+static __always_inline int allowed(struct stats *s, __u64 ns, int critical) {
   __u64 sec = ns / 1000000000;
   struct detail_budget *budget = bpf_map_lookup_elem(&detail_budgets, &sec);
   if (!budget) {
@@ -141,7 +141,11 @@ static __always_inline int allowed(struct stats *s, __u64 ns) {
     __sync_fetch_and_add(&s->detail_budget_failures, 1);
     return 0;
   }
-  if (budget->used >= detail_rate) {
+  __u32 limit = detail_rate;
+  if (!critical)
+    limit -= (detail_rate + BLACKBOX_CRITICAL_DETAIL_DIVISOR - 1) /
+             BLACKBOX_CRITICAL_DETAIL_DIVISOR;
+  if (budget->used >= limit) {
     __sync_fetch_and_add(&s->suppressed, 1);
     return 0;
   }
@@ -165,8 +169,8 @@ static __always_inline void task_identity(struct event *e,
     e->cgroup_id = BPF_CORE_READ(t, cgroups, dfl_cgrp, kn, id);
 }
 static __always_inline struct event *reserve(struct stats *s, __u32 kind,
-                                             __u64 now, int cap) {
-  if (cap && !allowed(s, now))
+                                             __u64 now, int cap, int critical) {
+  if (cap && !allowed(s, now, critical))
     return 0;
   struct event *e = bpf_ringbuf_reserve(&details, sizeof(*e), 0);
   if (!e) {

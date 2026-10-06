@@ -14,7 +14,7 @@ import (
 func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings, t terminal.Theme, verbose bool) error {
 	var b strings.Builder
 	enabled, active := sensorCounts(h)
-	notes := h.AutoCapture != nil && h.AutoCapture.LastError != ""
+	notes := h.AutoCapture != nil && (h.AutoCapture.LastError != "" || h.AutoCapture.WriteOverdue)
 	for _, s := range h.Sensors {
 		notes = notes || s.Loss != (model.Counters{}) || s.BudgetPruneFailures > 0 || s.TCPResetCoverage == model.TCPResetCoverageUnknown
 	}
@@ -70,11 +70,18 @@ func renderStatus(w io.Writer, h model.Health, settings *model.RecordingSettings
 	if a := h.AutoCapture; a != nil {
 		t.Section(&b, "AUTOMATIC CAPTURES")
 		tone := terminal.Info
-		if a.LastError != "" || a.State == "inactive" {
+		if a.LastError != "" || a.State == "inactive" || a.WriteOverdue {
 			tone = terminal.Warning
 		}
 		t.Notice(&b, tone, "State: "+a.State, "Sources: "+strings.Join(a.Sensors, ", ")+" · "+a.Directory)
 		t.Line(&b, terminal.Muted, "    ", fmt.Sprintf("Detected %d · saved %d · coalesced %d · failures %d (daemon lifetime)", a.Detected, a.Saved, a.Coalesced, a.Failures))
+		if a.WriteTimeoutNS > 0 {
+			message := "Snapshot writer held for " + config.DurationText(time.Duration(a.WritingForNS)) + " · timeout " + config.DurationText(time.Duration(a.WriteTimeoutNS))
+			if a.WriteOverdue {
+				message += " exceeded; waiting for filesystem, manual snapshots remain busy"
+			}
+			t.Line(&b, tone, "    ", message)
+		}
 		if a.PendingUntilNS != 0 {
 			pending := "Window complete; waiting for snapshot writer"
 			if a.PendingForNS > 0 {

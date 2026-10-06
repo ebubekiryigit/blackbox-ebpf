@@ -128,7 +128,7 @@ static __always_inline int record(struct sock *sk, struct sk_buff *skb,
   else
     __sync_fetch_and_add(&s->retransmits, 1);
   __u64 now = bpf_ktime_get_boot_ns();
-  struct event *e = reserve(s, kind, now, 1);
+  struct event *e = reserve(s, kind, now, 1, 1);
   if (!e)
     return 0;
   // IRQ/current-task context does not establish socket ownership. PID stays

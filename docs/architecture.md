@@ -71,10 +71,20 @@ counter without stopping aggregate collection. Kernel maps, rings, ingress and r
 Zero-byte logical WRITE completion notifications from flush bookkeeping are
 separate from device I/O measurements and missing-start counters. Actual cache
 flush dispatches remain timed; no additional tracking map is needed.
+Observed block requeues preserve the first dispatch and its process context.
+Allocation timestamps guard against request-address reuse. A requeued request
+without a verifiable allocation timestamp is excluded and counted as unmatched.
+Block/scheduler warnings stop at 75% of the existing per-second detail quota;
+the remaining quota is reserved for critical latency. Aggregate counts do not
+depend on detail admission.
 
 Best-effort is default. An enabled sensor that cannot initialize is unavailable;
-a permanently failed sensor is closed and marked error. Other sensors continue.
-Previous observations and the missing coverage reason remain in the capture.
+a permanently failed sensor gets one final aggregate read before it is closed
+and marked error. Readable counts and triggers are preserved; other sensors
+continue while one cleanup task per failed sensor waits for its reader to exit.
+Cancelled readers do not enqueue further enriched details; resource cleanup is
+joined during daemon shutdown. Previous observations and the missing coverage
+reason remain in the capture.
 No working sensors means failure. With `--strict`, an enabled sensor's
 initialization or permanent runtime failure terminates recording with an error.
 Disabled sensors are outside the strict requirement.
@@ -113,6 +123,9 @@ Snapshot selection stays on the single writer; a background worker publishes it.
 Manual and automatic snapshots share one writer lease. The private output directory
 rotates only automatic files within count and byte limits. Optional trigger metadata
 in the capture manifest lets offline analysis explain why the file was created.
+Status exposes the automatic writer's BOOTTIME age and warns after its configured
+timeout. A blocked filesystem syscall retains the lease until it returns; no
+replacement writer or additional pinned capture is created.
 
 ## Persistence and compatibility
 

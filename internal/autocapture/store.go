@@ -128,6 +128,12 @@ func rotate(root *os.Root, dir *os.File, files []storedFile, total, added int64,
 		old := files[0]
 		// Do not follow a replaced path or debit bytes for a different file.
 		info, err := root.Lstat(old.name)
+		if os.IsNotExist(err) {
+			// A shipper may remove published captures without taking our lock.
+			total -= old.size
+			files = files[1:]
+			continue
+		}
 		if err != nil {
 			rotationErr = err
 			break
@@ -136,7 +142,7 @@ func rotate(root *os.Root, dir *os.File, files []storedFile, total, added int64,
 			rotationErr = fmt.Errorf("managed capture changed during rotation: %s", old.name)
 			break
 		}
-		if err := root.Remove(old.name); err != nil {
+		if err := root.Remove(old.name); err != nil && !os.IsNotExist(err) {
 			rotationErr = err
 			break
 		}
@@ -175,6 +181,9 @@ func scan(ctx context.Context, root *os.Root, dir *os.File) ([]storedFile, int64
 				continue
 			}
 			info, err := root.Lstat(name)
+			if os.IsNotExist(err) {
+				continue
+			}
 			if err != nil {
 				return nil, 0, err
 			}
@@ -182,7 +191,7 @@ func scan(ctx context.Context, root *os.Root, dir *os.File) ([]storedFile, int64
 				return nil, 0, fmt.Errorf("managed capture is not a regular file: %s", name)
 			}
 			if partial {
-				if err := root.Remove(name); err != nil {
+				if err := root.Remove(name); err != nil && !os.IsNotExist(err) {
 					return nil, 0, err
 				}
 				continue

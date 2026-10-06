@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -107,6 +108,92 @@ func TestRotationStorageArithmeticDoesNotOverflow(t *testing.T) {
 	}
 	if _, _, err := rotate(nil, nil, nil, math.MaxInt64-2, 3, 0, limits); err == nil {
 		t.Fatal("overflowing byte budget accepted")
+	}
+}
+
+type removalDuringScan struct {
+	context.Context
+	remove func()
+}
+
+func (c *removalDuringScan) Err() error {
+	if c.remove != nil {
+		c.remove()
+		c.remove = nil
+	}
+	return c.Context.Err()
+}
+
+func TestScanToleratesCaptureRemovedAfterDirectoryRead(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint(partial), func(t *testing.T) {
+			path := t.TempDir()
+			name := "blackbox-auto-20261004T100000Z-0123456789abcdef.bbx"
+			if partial {
+				name = "." + name + ".partial"
+			}
+			if err := os.WriteFile(filepath.Join(path, name), []byte("removed evidence"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			root, err := os.OpenRoot(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			dir, err := root.Open(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dir.Close()
+			// Err is checked after ReadDir, before the entry's Lstat. Removing
+			// here reproduces the race deterministically, without sleeps.
+			ctx := &removalDuringScan{Context: context.Background(), remove: func() {
+				if err := root.Remove(name); err != nil {
+					t.Fatal(err)
+				}
+			}}
+			files, total, err := scan(ctx, root, dir)
+			if err != nil || len(files) != 0 || total != 0 {
+				t.Fatalf("removed capture aborted scan: files=%v bytes=%d error=%v", files, total, err)
+			}
+		})
+	}
+}
+
+func TestRotationToleratesExternallyRemovedCapture(t *testing.T) {
+	path := t.TempDir()
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	dir, err := root.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	var files []storedFile
+	for _, name := range []string{"old.bbx", "keep.bbx"} {
+		if err := os.WriteFile(filepath.Join(path, name), []byte("bbx"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		info, err := root.Lstat(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, storedFile{name, info.Size(), info.ModTime()})
+	}
+	if err := root.Remove("old.bbx"); err != nil {
+		t.Fatal(err)
+	}
+	limits := config.Default().AutoCapture
+	limits.MaxFiles = 1
+	files, total, err := rotate(root, dir, files, 6, 0, 0, limits)
+	if err != nil || len(files) != 1 || files[0].name != "keep.bbx" || total != 3 {
+		t.Fatalf("external removal broke rotation accounting: files=%v bytes=%d error=%v", files, total, err)
+	}
+	if _, err := root.Lstat("keep.bbx"); err != nil {
+		t.Fatal("rotation removed extra evidence", err)
 	}
 }
 

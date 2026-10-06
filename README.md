@@ -80,6 +80,9 @@ for timing, storage limits, and failure handling.
 | TCP | Retransmissions and sent/received reset observations with endpoints |
 | OOM | Kernel-selected out-of-memory victims |
 
+The OOM sensor does not observe userspace termination decisions such as
+systemd-oomd, earlyoom or kubelet eviction.
+
 Normal activity stays in bounded kernel aggregates. Only selected details cross
 to userspace. Kernel maps, rings, queues, retained history, capture decoding, and
 report output all have explicit bounds.

@@ -6,3 +6,4 @@ package sensor
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -tags linux sched ../../bpf/sched.c -- -O2 -g -Wall -Werror
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -tags linux tcp ../../bpf/tcp.c -- -O2 -g -Wall -Werror
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -tags linux oom ../../bpf/oom.c -- -O2 -g -Wall -Werror
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -tags linux,integration policytest ../../bpf/policies_test.c -- -O2 -g -Wall -Werror

@@ -70,6 +70,9 @@ The socket path is CLI-only and is not accepted in YAML.
 Default best-effort mode continues with remaining sensors when a subsystem cannot
 initialize or fails permanently. Status, saved health and analysis expose the
 missing coverage and its reason. With no usable sensors, startup fails.
+When a reader fails permanently, Blackbox attempts one final aggregate read
+before closing the sensor. Readable counts and automatic triggers are retained;
+the sensor still reports failed coverage. An unreadable map cannot be recovered.
 On kernels with the older TCP sent-reset tracepoint signature,
 sent resets without a full socket are outside sensor coverage, including
 connection refusals, TIME_WAIT and request sockets. Blackbox checks the BTF
@@ -92,12 +95,18 @@ are not required. A strict failure does not flush a pending automatic incident o
 
 SIGINT and SIGTERM stop the foreground daemon with exit code 0. Shutdown cancels
 automatic writes and closes active snapshot connections; incomplete files are
-removed, while already published captures remain. A sensor or control
-server failure exits non-zero. Filesystem calls already blocked in the kernel may
+removed, while already published captures remain. Strict sensor failures, losing
+all active sensors, or an unrecoverable control server failure exit non-zero.
+Temporary control accept errors, including socket memory exhaustion, are retried
+with cancellable backoff while recording continues.
+Filesystem calls already blocked in the kernel may
 delay process exit until the call returns. A sensor reader blocked in a `/proc`
 metadata read can also delay shutdown: closing the sensor waits for its reader
-to exit. Aggregate recording and control requests remain independent of that
-reader while the daemon is running.
+to exit. During normal ingestion, aggregate recording and control requests do
+not wait for metadata reads. Permanent sensor failure cleanup also waits for
+the reader, but runs once per failed sensor outside the recorder loop. Remaining
+sensors, aggregate polling and control queries continue; daemon shutdown joins
+cleanup without closing a collection still owned by its reader.
 
 `status` returns a non-zero exit code when no sensor remains active, after rendering
 the available diagnostics. The Compose healthcheck therefore marks a running but
@@ -137,6 +146,12 @@ cooldown and no trigger is suppressed.
 Waiting for the post-window does not hold a snapshot lease or pin history. Manual
 snapshots remain available. One capture may be selected/encoded at a time across
 both paths. A manual request during an active write gets the existing busy error.
+The automatic lease remains held through validation, filesystem sync, publication
+and rotation. A blocked filesystem call can therefore keep manual snapshots busy
+beyond `write_timeout`; the timeout does not forcibly release the lease.
+Status shows how long the writer has held the snapshot and warns when that age
+reaches `write_timeout`; the daemon logs the warning once per write on its existing
+poll/query paths. It does not create another writer or release still-pinned history.
 If the automatic window closes while the writer is busy, only its metadata waits.
 One further waiting window groups subsequent triggers, extending its end only while
 the writer is backed up. Its trigger counts remain in the manifest. Selection keeps
@@ -155,6 +170,13 @@ the existing Compose bind mount. Set `auto_capture.directory` in YAML only when 
 different path is needed. The directory must be owned by the daemon user with
 `0700` permissions. Files use `0600`, random sortable
 names, validation, and atomic non-overwriting publication.
+`armed` describes trigger monitoring, not a successful storage probe. Directory
+permissions, available space, hard links and filesystem sync are checked during
+each actual publication. Failures appear in logs and automatic capture status;
+they do not stop aggregate recording and the failed incident is not retried.
+For storage incidents, prefer an automatic capture directory on a separate
+filesystem backed by a different device from the workload being observed. A
+different directory on the same device does not isolate a device stall.
 
 The directory is dedicated to automatic output. Blackbox rotates only names matching
 its `blackbox-auto-<UTC timestamp>-<random>.bbx` convention, oldest modification time
@@ -175,6 +197,8 @@ directory because successful rotation removes old files by design.
 Each write rescans a bounded number of directory entries under an exclusive
 cross-process lock. Restart includes existing files in accounting and removes
 recognized abandoned partial files. New limits are enforced on the next write.
+Files removed by an external shipper during scanning or rotation are ignored;
+replaced files, symlinks and other filesystem errors remain failures.
 A single file cannot exceed the smaller of the storage budget and the internal
 512 MiB encoded capture limit. A 64 MiB filesystem free-space reserve is checked
 before output chunks; other processes can still consume that space concurrently.
@@ -210,8 +234,10 @@ outlives evicted source intervals produces a critical verdict with limited
 evidence rather than a green report. Captures exclude transient automatic
 writer state from daemon health; the trigger reasons remain in the manifest.
 
-Stopping or restarting the daemon discards a pending post-window. In-flight output
-is cancelled where possible. Files already published when cancellation is observed
+Stopping or restarting the daemon discards a pending post-window and logs a
+warning identifying its BOOTTIME deadline. In-flight output is cancelled where
+possible; the worker's final publication or failure result is logged even when
+the recorder loop has already stopped. Files already published when cancellation is observed
 remain. Automatic writes do not resume pending incidents across restarts;
 previously published files remain available. Standalone `capture` creates only its
 requested output and never enables automatic publication.
@@ -241,7 +267,11 @@ before `systemctl restart blackbox`; unsaved history is lost. See [upgrades](com
 Normal observations remain in per-CPU histograms and counters, polled at the public
 `poll_interval`. Details cover slow block I/O, scheduler waits, TCP
 retransmissions/resets, and OOM victims. Each sensor has a bounded, shared detail
-quota across CPUs; OOM is exempt. Aggregate counters still include
+quota across CPUs; OOM is exempt. Block I/O and scheduler warning details stop
+at 75% of the total quota (rounded down), leaving the rest for critical latency.
+Critical details can use the full quota. This does not increase the total limit
+or guarantee every critical detail; concurrent CPUs retain the existing small
+near-limit allowance. TCP retains its full quota. Aggregate counters still include
 observations whose details were suppressed.
 
 The fixed 64 MiB recorder budget covers retained observation accounting,
@@ -355,7 +385,7 @@ Collection notes explain the consequence of each nonzero counter:
 
 | Counter | Meaning and effect |
 | --- | --- |
-| **Unmatched / start missing** | A completion had no matching tracked dispatch/start. Its latency could not be calculated and is excluded from the histogram. This does not establish why the start was missing or prove a workload fault. |
+| **Unmatched / start missing** | A completion had no trustworthy first-dispatch record. Starts may be missing, or a requeued request's allocation identity could not be verified. Its latency is excluded from the histogram; this is not proof of a workload fault. |
 | **Tracking failures / start unsaved** | Tracking state could not be retained. Some latency measurements may be missing. |
 | **Ring reserve failures / buffer rejected** | The kernel detail buffer could not accept an event. Aggregate counts remain available; individual detail is missing. |
 | **Detail suppressed / rate limited** | The bounded detail quota intentionally omitted events. Counts and histograms still include them. |
@@ -379,7 +409,12 @@ references. The `assessment` object is the same verdict shown in the terminal:
 `status` describes recorder health and collection notes; analyze a
 snapshot to assess workload signals.
 
-Block I/O measures device dispatch to final data completion; dispatched cache
+Block I/O measures first observed device dispatch to final data completion,
+including observed requeue/redispatch intervals. Allocation identity prevents a
+reused request address from retaining an old timer. Without a requeue observation,
+a later dispatch replaces the start; intervals missed by the kernel probe cannot
+be reconstructed. Requeued requests without allocation timestamps are excluded
+and counted as unmatched rather than assigned an ambiguous latency. Dispatched cache
 flushes are timed independently. This does not measure the application's entire
 `fsync` duration. Linux flush sequencing can complete the original WRITE again
 after its data was consumed, or finish a data-less logical WRITE without its own

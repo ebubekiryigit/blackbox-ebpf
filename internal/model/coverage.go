@@ -22,7 +22,7 @@ func CounterNotes(sensor string, c Counters) []CounterNote {
 		}
 	}
 	if sensor == "block_io" {
-		add("unmatched_completions", c.Unmatched, "I/O completion could not be timed", "I/O completions could not be timed", "No matching dispatch/start record was found (unmatched). These latencies are excluded from the I/O histogram; the capture does not establish why starts were missing.")
+		add("unmatched_completions", c.Unmatched, "I/O completion could not be timed", "I/O completions could not be timed", "No trustworthy first-dispatch record was available (unmatched). This includes missing starts and requeued requests whose allocation identity could not be verified. These latencies are excluded from the I/O histogram.")
 	} else {
 		add("unmatched_completions", c.Unmatched, "completion had no matching start record", "completions had no matching start record", "Their latency could not be measured (unmatched). This is a measurement gap, not proof of a workload failure.")
 	}

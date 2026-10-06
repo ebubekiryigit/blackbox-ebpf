@@ -19,8 +19,13 @@ type blockDetailBudget struct {
 }
 
 type blockInflight struct {
-	_        structs.HostLayout
-	Start    uint64
+	_      structs.HostLayout
+	Timing struct {
+		_          structs.HostLayout
+		Start      uint64
+		Generation uint64
+		Requeued   uint64
+	}
 	Identity struct {
 		_               structs.HostLayout
 		MonoNs          uint64
@@ -73,8 +78,10 @@ const (
 	blockMapStarts              = "starts"
 	blockProgComplete           = "complete"
 	blockProgIssue              = "issue"
+	blockProgRequeue            = "requeue"
 	blockVarCriticalThresholdNs = "critical_threshold_ns"
 	blockVarDetailRate          = "detail_rate"
+	blockVarRequeueArgIndex     = "requeue_arg_index"
 	blockVarRqArgIndex          = "rq_arg_index"
 	blockVarThresholdNs         = "threshold_ns"
 )
@@ -123,6 +130,7 @@ type blockSpecs struct {
 type blockProgramSpecs struct {
 	Complete *ebpf.ProgramSpec `ebpf:"complete"`
 	Issue    *ebpf.ProgramSpec `ebpf:"issue"`
+	Requeue  *ebpf.ProgramSpec `ebpf:"requeue"`
 }
 
 // blockMapSpecs contains maps before they are loaded into the kernel.
@@ -141,6 +149,7 @@ type blockMapSpecs struct {
 type blockVariableSpecs struct {
 	CriticalThresholdNs *ebpf.VariableSpec `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.VariableSpec `ebpf:"detail_rate"`
+	RequeueArgIndex     *ebpf.VariableSpec `ebpf:"requeue_arg_index"`
 	RqArgIndex          *ebpf.VariableSpec `ebpf:"rq_arg_index"`
 	ThresholdNs         *ebpf.VariableSpec `ebpf:"threshold_ns"`
 }
@@ -186,6 +195,7 @@ func (m *blockMaps) Close() error {
 type blockVariables struct {
 	CriticalThresholdNs *ebpf.Variable `ebpf:"critical_threshold_ns"`
 	DetailRate          *ebpf.Variable `ebpf:"detail_rate"`
+	RequeueArgIndex     *ebpf.Variable `ebpf:"requeue_arg_index"`
 	RqArgIndex          *ebpf.Variable `ebpf:"rq_arg_index"`
 	ThresholdNs         *ebpf.Variable `ebpf:"threshold_ns"`
 }
@@ -196,12 +206,14 @@ type blockVariables struct {
 type blockPrograms struct {
 	Complete *ebpf.Program `ebpf:"complete"`
 	Issue    *ebpf.Program `ebpf:"issue"`
+	Requeue  *ebpf.Program `ebpf:"requeue"`
 }
 
 func (p *blockPrograms) Close() error {
 	return _BlockClose(
 		p.Complete,
 		p.Issue,
+		p.Requeue,
 	)
 }
 

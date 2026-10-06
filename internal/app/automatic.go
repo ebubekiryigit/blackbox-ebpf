@@ -23,14 +23,16 @@ type autoResult struct {
 }
 
 type automatic struct {
-	controller *autocapture.Controller
-	engine     *Engine
-	timer      *time.Timer
-	jobs       chan autoJob
-	results    chan autoResult
-	cancel     context.CancelFunc
-	done       chan struct{}
-	retrying   bool
+	controller    *autocapture.Controller
+	engine        *Engine
+	timer         *time.Timer
+	jobs          chan autoJob
+	results       chan autoResult
+	cancel        context.CancelFunc
+	done          chan struct{}
+	retrying      bool
+	writingSince  uint64
+	overdueLogged bool
 }
 
 func newAutomatic(ctx context.Context, e *Engine, available []string) *automatic {
@@ -62,6 +64,9 @@ func (a *automatic) close() {
 	if a == nil {
 		return
 	}
+	if h := a.controller.Health(); h.PendingUntilNS != 0 && a.engine.logger != nil {
+		a.engine.logger.Warn("pending automatic incident discarded during shutdown", "pending_until_boot_ns", h.PendingUntilNS)
+	}
 	a.timer.Stop()
 	a.cancel()
 	<-a.done
@@ -69,6 +74,14 @@ func (a *automatic) close() {
 	select {
 	case job := <-a.jobs:
 		job.release()
+		a.finish(autoResult{err: context.Canceled})
+	default:
+	}
+	// The recorder loop may stop before receiving the final worker result.
+	// Report publication or cancellation failures rather than losing the log.
+	select {
+	case result := <-a.results:
+		a.finish(result)
 	default:
 	}
 }
@@ -87,6 +100,8 @@ func (a *automatic) completed() <-chan autoResult {
 }
 
 func (a *automatic) finish(result autoResult) {
+	a.writingSince = 0
+	a.overdueLogged = false
 	a.controller.Finish(result.path, result.at, result.err)
 	if result.err != nil {
 		if result.path != "" {
@@ -102,6 +117,7 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 	if a == nil {
 		return
 	}
+	a.observeWriter(now)
 	a.controller.CollectedThrough(collectedUntil)
 	end, pending := a.controller.Deadline()
 	if !pending {
@@ -126,6 +142,7 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 	}
 	a.retrying = false
 	incident, start := a.controller.Begin()
+	a.writingSince = now
 	h := health()
 	h.AutoCapture = nil // Live scheduling state is not part of the captured evidence.
 	c := r.SnapshotWindow(start, incident.EndMonoNS, host, h, "ebpf")
@@ -134,7 +151,29 @@ func (a *automatic) progress(now, collectedUntil uint64, r *recorder.Recorder, h
 	a.jobs <- autoJob{c, release}
 }
 
-// The lease covers selection and encoding for both manual and automatic captures.
+func (a *automatic) health(now uint64) *model.AutoCaptureHealth {
+	a.observeWriter(now)
+	h := a.controller.Health()
+	if a.writingSince != 0 && now >= a.writingSince {
+		h.WritingForNS = now - a.writingSince
+		h.WriteTimeoutNS = uint64(a.engine.Config.AutoCapture.WriteTimeout)
+		h.WriteOverdue = h.WritingForNS >= h.WriteTimeoutNS
+	}
+	return h
+}
+
+func (a *automatic) observeWriter(now uint64) {
+	if a.writingSince == 0 || now < a.writingSince || a.overdueLogged || now-a.writingSince < uint64(a.engine.Config.AutoCapture.WriteTimeout) {
+		return
+	}
+	a.overdueLogged = true
+	if a.engine.logger != nil {
+		a.engine.logger.Warn("automatic capture writer exceeded deadline; waiting for filesystem operation", "held_for", time.Duration(now-a.writingSince), "write_timeout", a.engine.Config.AutoCapture.WriteTimeout)
+	}
+}
+
+// The lease pins one selected capture through manual streaming or automatic
+// validation, publication and rotation. A filesystem stall can delay its release.
 // Cancellation returns ownership to the loop until the reply is delivered.
 func (e *Engine) beginSnapshot() (func(), bool) {
 	if !e.snapshotBusy.CompareAndSwap(false, true) {

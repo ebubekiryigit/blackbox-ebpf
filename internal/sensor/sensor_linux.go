@@ -69,7 +69,7 @@ type definition struct {
 
 func definitions(c config.Config) []definition {
 	return []definition{
-		{"block_io", loadBlock, uint64(c.BlockThreshold), uint64(c.BlockCritical), map[string]string{"issue": "block_rq_issue", "complete": "block_rq_complete"}},
+		{"block_io", loadBlock, uint64(c.BlockThreshold), uint64(c.BlockCritical), map[string]string{"issue": "block_rq_issue", "requeue": "block_rq_requeue", "complete": "block_rq_complete"}},
 		{"scheduler", loadSched, uint64(c.SchedulerThreshold), uint64(c.SchedulerCritical), map[string]string{"wakeup": "sched_wakeup", "wakeup_new": "sched_wakeup_new", "switch_task": "sched_switch", "exit_task": "sched_process_exit"}},
 		{"tcp", loadTcp, 0, 0, map[string]string{"retransmit": "tcp_retransmit_skb", "send_reset": "tcp_send_reset", "receive_reset": "tcp_receive_reset"}},
 		{"oom", loadOom, 0, 0, map[string]string{"victim": "mark_victim"}},
@@ -120,9 +120,11 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 			}
 			if d.name == "block_io" {
 				var index uint32
-				index, err = blockRequestIndex()
+				index, err = blockRequestIndex("block_rq_issue")
 				if err == nil {
 					constants["rq_arg_index"] = index
+					index, err = blockRequestIndex("block_rq_requeue")
+					constants["requeue_arg_index"] = index
 				}
 			}
 			if d.name == "oom" {
@@ -217,13 +219,13 @@ func openDefinitions(c config.Config, defs []definition) ([]Sensor, []model.Sens
 	}
 	return sensors, unavailable, nil
 }
-func blockRequestIndex() (uint32, error) {
+func blockRequestIndex(tracepoint string) (uint32, error) {
 	spec, e := btf.LoadKernelSpec()
 	if e != nil {
 		return 0, e
 	}
 	var t *btf.Typedef
-	if e = spec.TypeByName("btf_trace_block_rq_issue", &t); e != nil {
+	if e = spec.TypeByName("btf_trace_"+tracepoint, &t); e != nil {
 		return 0, fmt.Errorf("cannot establish block tracepoint argument layout: %w", e)
 	}
 	ptr, ok := btf.UnderlyingType(t.Type).(*btf.Pointer)
@@ -234,6 +236,10 @@ func blockRequestIndex() (uint32, error) {
 	if !ok {
 		return 0, fmt.Errorf("unexpected block tracepoint prototype")
 	}
+	return blockRequestIndexFromProto(proto)
+}
+
+func blockRequestIndexFromProto(proto *btf.FuncProto) (uint32, error) {
 	for i, p := range proto.Params {
 		pt, ok := btf.UnderlyingType(p.Type).(*btf.Pointer)
 		if !ok {

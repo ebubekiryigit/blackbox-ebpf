@@ -42,7 +42,7 @@ type Engine struct {
 	SnapshotFailures atomic.Uint64
 	snapshotBusy     atomic.Bool
 	closeMu          sync.Mutex
-	closedSensors    map[string]bool
+	closedSensors    map[string]chan struct{}
 	clock            func() (uint64, error)
 	sampleClock      func() (clockSample, error)
 	metadataRoot     string
@@ -77,6 +77,15 @@ func (e *Engine) Close() {
 	for _, s := range e.sensors {
 		e.closeSensor(s)
 	}
+	e.closeMu.Lock()
+	var closing []chan struct{}
+	for _, done := range e.closedSensors {
+		closing = append(closing, done)
+	}
+	e.closeMu.Unlock()
+	for _, done := range closing {
+		<-done
+	}
 }
 
 func (e *Engine) RecordSnapshotFailure(err error) {
@@ -89,17 +98,23 @@ func (e *Engine) RecordSnapshotFailure(err error) {
 func (e *Engine) closeSensor(s sensor.Sensor) {
 	e.closeMu.Lock()
 	if e.closedSensors == nil {
-		e.closedSensors = make(map[string]bool)
+		e.closedSensors = make(map[string]chan struct{})
 	}
-	if e.closedSensors[s.Name()] {
+	if e.closedSensors[s.Name()] != nil {
 		e.closeMu.Unlock()
 		return
 	}
-	e.closedSensors[s.Name()] = true
+	done := make(chan struct{})
+	e.closedSensors[s.Name()] = done
 	e.closeMu.Unlock()
-	if err := s.Close(); err != nil && e.logger != nil {
-		e.logger.Error("sensor close failed", "sensor", s.Name(), "error", err)
-	}
+	// At most one cleanup per sensor. A blocked metadata read must not hold
+	// the recorder loop; Close owns its resources until the reader exits.
+	go func() {
+		defer close(done)
+		if err := s.Close(); err != nil && e.logger != nil {
+			e.logger.Error("sensor close failed", "sensor", s.Name(), "error", err)
+		}
+	}()
 }
 func (e *Engine) Ask(ctx context.Context, last time.Duration) (Result, error) {
 	q := Query{ctx: ctx, Last: last, Reply: make(chan Result)}
@@ -182,22 +197,36 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 		}
 	}
 	var ready []sensor.Sensor
+	sensorCancels := make(map[string]context.CancelFunc)
+	defer func() {
+		for _, cancel := range sensorCancels {
+			cancel()
+		}
+	}()
 	for _, s := range e.sensors {
+		sensorCtx, cancel := context.WithCancel(ctx)
+		sensorCancels[s.Name()] = cancel
 		_, err = s.Snapshot(now, now) // Exclude attachment/startup activity from interval counts.
 		if err == nil {
 			// The sensor owns its ring-reader goroutine. A slow /proc read may
 			// delay that sensor's details, but cannot stall the recorder loop.
 			resolver := process.NewWithPathLimit(metadataRoot, e.Config.Resources.MetadataEntries, e.Config.Resources.MetadataPathBytes)
-			err = s.Start(ctx, func(v model.Event) {
+			err = s.Start(sensorCtx, func(v model.Event) {
+				if sensorCtx.Err() != nil {
+					return
+				}
 				failures := resolver.Failures
 				v = resolver.Enrich(v)
 				if resolver.Failures != failures {
 					metadataFailures.Add(resolver.Failures - failures)
 				}
-				sink(v)
+				if sensorCtx.Err() == nil {
+					sink(v)
+				}
 			})
 		}
 		if err != nil {
+			cancel()
 			e.closeSensor(s)
 			if e.Config.Strict {
 				return fmt.Errorf("strict mode: %s failed initialization: %w", s.Name(), err)
@@ -238,7 +267,7 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			h.LastClockChange = tracker.latest
 		}
 		if auto != nil {
-			h.AutoCapture = auto.controller.Health()
+			h.AutoCapture = auto.health(now)
 			if until := h.AutoCapture.PendingUntilNS; until > now {
 				h.AutoCapture.PendingForNS = until - now
 			}
@@ -258,8 +287,22 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			if disabled[s.Name()] {
 				continue
 			}
-			if h := s.Health(); h.State != "healthy" {
+			h := s.Health()
+			// A failed reader can leave readable aggregate maps. Preserve the
+			// last interval and its triggers before closing those maps.
+			m, er := s.Snapshot(previous, end)
+			if er == nil {
+				if auto != nil {
+					auto.controller.Observe(m, end)
+				}
+				if !r.Metric(m, end) && !recorderOverloadLogged {
+					recorderOverloadLogged = true
+					logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
+				}
+			}
+			if h.State != "healthy" {
 				disabled[s.Name()] = true
+				sensorCancels[s.Name()]()
 				if auto != nil {
 					auto.controller.Unavailable(s.Name())
 				}
@@ -270,9 +313,9 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 				logger.Error("sensor failed permanently", "sensor", h.Name, "reason", h.Reason)
 				continue
 			}
-			m, er := s.Snapshot(previous, end)
 			if er != nil {
 				disabled[s.Name()] = true
+				sensorCancels[s.Name()]()
 				if auto != nil {
 					auto.controller.Unavailable(s.Name())
 				}
@@ -286,13 +329,6 @@ func (e *Engine) RunWithReady(ctx context.Context, readySignal chan<- struct{}) 
 			if h := s.Health(); h.BudgetPruneFailures > 0 && !budgetPruneLogged[s.Name()] {
 				logger.Warn("detail budget cleanup failed; retrying on the next poll", "sensor", s.Name(), "failures", h.BudgetPruneFailures)
 				budgetPruneLogged[s.Name()] = true
-			}
-			if auto != nil {
-				auto.controller.Observe(m, end)
-			}
-			if !r.Metric(m, end) && !recorderOverloadLogged {
-				recorderOverloadLogged = true
-				logger.Warn("recorder memory budget exhausted; observations are being dropped", "counter", "recorder_drops")
 			}
 		}
 		if len(disabled) == len(e.sensors) {

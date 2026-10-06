@@ -8,7 +8,7 @@ SEC("raw_tp/mark_victim") int victim(struct bpf_raw_tracepoint_args *ctx) {
     return 0;
   __sync_fetch_and_add(&s->count, 1);
   __sync_fetch_and_add(&s->anomalies, 1);
-  struct event *e = reserve(s, 5, bpf_ktime_get_boot_ns(), 0);
+  struct event *e = reserve(s, 5, bpf_ktime_get_boot_ns(), 0, 1);
   if (e) {
     if (victim_task_arg) {
       task_identity(e, (void *)ctx->args[0]);

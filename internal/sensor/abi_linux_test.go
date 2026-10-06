@@ -46,7 +46,11 @@ func TestEmbeddedWireABIAndConfiguredMapBudgets(t *testing.T) {
 		}
 	}
 	// The generated block map embeds the exact C event type, including padding.
-	generated := reflect.TypeFor[blockInflight]().Field(2).Type
+	identity, ok := reflect.TypeFor[blockInflight]().FieldByName("Identity")
+	if !ok {
+		t.Fatal("block tracker does not embed the event identity")
+	}
+	generated := identity.Type
 	wire := reflect.TypeFor[wireEvent]()
 	if generated.Size() != wire.Size() || binary.Size(reflect.New(generated).Elem().Interface()) != binary.Size(wireEvent{}) {
 		t.Fatal("event wire ABI size mismatch")

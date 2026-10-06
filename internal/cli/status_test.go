@@ -235,3 +235,29 @@ func TestStatusExplainsBudgetCleanupRetryWithoutCallingItLostDetail(t *testing.T
 		t.Fatalf("cleanup retry was mistaken for measured detail loss:\n%s", out.String())
 	}
 }
+
+func TestStatusWarnsOnlyWhenAutomaticWriterIsOverdue(t *testing.T) {
+	for _, overdue := range []bool{false, true} {
+		h := model.Health{Sensors: []model.SensorHealth{{Name: "scheduler", State: "healthy"}}, AutoCapture: &model.AutoCaptureHealth{State: "writing", WritingForNS: uint64(3 * time.Minute), WriteTimeoutNS: uint64(2 * time.Minute), WriteOverdue: overdue}}
+		var out bytes.Buffer
+		if err := renderStatus(&out, h, nil, terminal.Theme{}, false); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"State: writing", "Snapshot writer held for 3m", "timeout 2m"} {
+			if !strings.Contains(out.String(), want) {
+				t.Fatal("writer age missing", out.String())
+			}
+		}
+		if strings.Contains(out.String(), "COLLECTION NOTES") != overdue || strings.Contains(out.String(), "manual snapshots remain busy") != overdue {
+			t.Fatal("incorrect writer severity", out.String())
+		}
+		encoded, err := json.Marshal(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded model.Health
+		if err = json.Unmarshal(encoded, &decoded); err != nil || decoded.AutoCapture.WriteOverdue != overdue || decoded.AutoCapture.WritingForNS != h.AutoCapture.WritingForNS {
+			t.Fatal("writer diagnostic lost in JSON", err)
+		}
+	}
+}

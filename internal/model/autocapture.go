@@ -34,6 +34,9 @@ type AutoCaptureHealth struct {
 	LastError      string    `json:"last_error,omitempty"`
 	PendingUntilNS uint64    `json:"pending_until_ns,omitempty"`
 	PendingForNS   uint64    `json:"pending_for_ns,omitempty"`
+	WritingForNS   uint64    `json:"writing_for_ns,omitempty"`
+	WriteTimeoutNS uint64    `json:"write_timeout_ns,omitempty"`
+	WriteOverdue   bool      `json:"write_overdue,omitempty"`
 }
 
 // Valid accepts only bounded, internally consistent trigger metadata. It is

@@ -67,7 +67,8 @@ int switch_task(struct bpf_raw_tracepoint_args *ctx) {
       __sync_fetch_and_add(&s->anomalies, 1);
       if (latency >= critical_threshold_ns)
         __sync_fetch_and_add(&s->critical, 1);
-      struct event *e = reserve(s, 2, bpf_ktime_get_boot_ns(), 1);
+      struct event *e = reserve(s, 2, bpf_ktime_get_boot_ns(), 1,
+                                latency >= critical_threshold_ns);
       if (e) {
         task_identity(e, next);
         e->latency_ns = latency;

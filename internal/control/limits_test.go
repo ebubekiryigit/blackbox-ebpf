@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -276,13 +277,14 @@ func (temporaryAcceptError) Temporary() bool { return true }
 
 type retryListener struct {
 	calls     atomic.Int32
+	err       error
 	closed    chan struct{}
 	closeOnce sync.Once
 }
 
 func (l *retryListener) Accept() (net.Conn, error) {
 	if l.calls.Add(1) == 1 {
-		return nil, temporaryAcceptError{}
+		return nil, l.err
 	}
 	<-l.closed
 	return nil, net.ErrClosed
@@ -299,21 +301,26 @@ func (a controlTestAddr) Network() string { return "test" }
 func (a controlTestAddr) String() string  { return string(a) }
 
 func TestTemporaryAcceptFailureDoesNotStopServer(t *testing.T) {
-	listener := &retryListener{closed: make(chan struct{})}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- serveListener(ctx, listener, &app.Engine{Config: config.Default()}, config.Default().Control)
-	}()
-	deadline := time.Now().Add(time.Second)
-	for listener.calls.Load() < 2 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if listener.calls.Load() < 2 {
-		t.Fatal("temporary accept error was not retried")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
+	for _, err := range []error{temporaryAcceptError{}, syscall.ENOMEM, syscall.ENOBUFS} {
+		t.Run(err.Error(), func(t *testing.T) {
+			listener := &retryListener{err: &net.OpError{Op: "accept", Net: "unix", Err: err}, closed: make(chan struct{})}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				done <- serveListener(ctx, listener, &app.Engine{Config: config.Default()}, config.Default().Control)
+			}()
+			deadline := time.Now().Add(time.Second)
+			for listener.calls.Load() < 2 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if listener.calls.Load() < 2 {
+				t.Fatal("temporary accept error was not retried")
+			}
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
